@@ -12,6 +12,7 @@
   "type": "commonjs",
   "devDependencies": {
     "eslint": "^10.8.1",
+    "globals": "^17.11.0",
     "htmlhint": "^1.9.2"
   }
 }
