@@ -44,9 +44,9 @@ jobs:
       - name: Validar Sintaxe HTML (HTMLHint)
         run: npx htmlhint index.html
 
-      # Análise Estática de JS (ESLint v9+)
+      # Análise Estática de JS via ESLint
       - name: ESLint Scan
-        run: npx eslint assets/js/script.js --no-config-lookup --rule '{"no-undef":"error", "no-unused-vars":"warn", "semi":["error", "always"]}' --env es2021,browser
+        run: npx eslint assets/js/script.js
 
   # -------------------------------------------------------------
   # JOB 2: Análise de Dependências (SCA)
