@@ -1,0 +1,17 @@
+{
+  "name": "steganography-suite",
+  "version": "1.0.0",
+  "description": "> **Suíte Client-Side de Análise Forense, Injeção e Extração de Esteganografia via Concatenação.**",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "eslint": "^10.8.1",
+    "htmlhint": "^1.9.2"
+  }
+}
