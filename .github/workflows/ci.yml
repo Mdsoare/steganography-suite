@@ -1,0 +1,110 @@
+name: Steganography Suite CI Pipeline
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+# Permissões mínimas para os jobs (Princípio do Menor Privilégio)
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  # -------------------------------------------------------------
+  # JOB 1: Análise de Código e Segurança (SAST & Secrets)
+  # -------------------------------------------------------------
+  lint-and-security:
+    name: SAST (Linting & Security Scan)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar ambiente Node.js (Para ferramentas de CI)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # Instala dependências exatas definidas no package-lock.json
+      - name: Instalar Dependências de Desenvolvimento
+        run: npm ci
+
+      # Validação de Segurança de Secrets (Evitar credenciais vazadas)
+      - name: Scan para detecção de segredos (Secret Detection)
+        uses: trufflesecurity/trufflehog-action@main
+        with:
+          extra_args: --only-verified
+
+      # Validação do HTML
+      - name: Validar Sintaxe HTML (HTMLHint)
+        run: npx htmlhint index.html
+
+      # Análise Estática de JS apontando para o caminho correto: assets/js/script.js
+      - name: ESLint Scan
+        run: npx eslint assets/js/script.js --no-eslintrc --rules '{"no-undef":"error", "no-unused-vars":"warn", "semi":["error", "always"]}' --env es2021,browser
+
+  # -------------------------------------------------------------
+  # JOB 2: Análise de Dependências (SCA)
+  # -------------------------------------------------------------
+  sca-osv:
+    name: SCA (OSV-Scanner)
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.5.0
+
+  # -------------------------------------------------------------
+  # JOB 3: Validação da Política CSP e Integridade Estrutural
+  # -------------------------------------------------------------
+  csp-and-structure-check:
+    name: Validate CSP & File Integrity
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      # Garante que os arquivos do projeto não utilizam CDNs externos ou scripts não autorizados
+      - name: Checar se existem dependências externas no HTML
+        run: |
+          if grep -E 'http://|https://' index.html | grep -v 'Content-Security-Policy'; then
+            echo "❌ ERRO: Encontrados links/scripts externos no index.html. Mantenha a aplicação 100% offline."
+            exit 1
+          else
+            echo "✅ Validação estática concluída: Nenhum recurso externo encontrado no HTML."
+          fi
+
+      # Verifica a existência dos arquivos principais na estrutura atualizada
+      - name: Validar estrutura de arquivos obrigatórios
+        run: |
+          test -f index.html || (echo "❌ index.html não encontrado!" && exit 1)
+          test -f assets/js/script.js || (echo "❌ assets/js/script.js não encontrado!" && exit 1)
+          test -f README.md || (echo "❌ README.md não encontrado!" && exit 1)
+          echo "✅ Todos os arquivos essenciais estão presentes."
+
+  # -------------------------------------------------------------
+  # JOB 4: Publicação do Artefato
+  # -------------------------------------------------------------
+  build-artifact:
+    name: Bundle & Upload Artifact
+    needs: [lint-and-security, sca-osv, csp-and-structure-check]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Empacotar Aplicação
+        run: |
+          mkdir -p dist/assets
+          cp index.html README.md dist/
+          cp -r assets/ dist/
+
+      - name: Subir Artefato de Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: steganography-suite-build
+          path: dist/
+          retention-days: 7
