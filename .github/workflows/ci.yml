@@ -34,9 +34,9 @@ jobs:
       - name: Instalar Dependências de Desenvolvimento
         run: npm ci
 
-      # Validação de Segurança de Secrets (Evitar credenciais vazadas)
+      # Validação de Segurança de Secrets (Ação corrigida)
       - name: Scan para detecção de segredos (Secret Detection)
-        uses: trufflesecurity/trufflehog-action@main
+        uses: trufflesecurity/trufflehog@main
         with:
           extra_args: --only-verified
 
@@ -44,7 +44,7 @@ jobs:
       - name: Validar Sintaxe HTML (HTMLHint)
         run: npx htmlhint index.html
 
-      # Análise Estática de JS apontando para o caminho correto: assets/js/script.js
+      # Análise Estática de JS
       - name: ESLint Scan
         run: npx eslint assets/js/script.js --no-eslintrc --rules '{"no-undef":"error", "no-unused-vars":"warn", "semi":["error", "always"]}' --env es2021,browser
 
@@ -66,7 +66,7 @@ jobs:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
 
-      # Garante que os arquivos do projeto não utilizam CDNs externos ou scripts não autorizados
+      # Garante que os arquivos do projeto não utilizam CDNs externos
       - name: Checar se existem dependências externas no HTML
         run: |
           if grep -E 'http://|https://' index.html | grep -v 'Content-Security-Policy'; then
@@ -76,7 +76,7 @@ jobs:
             echo "✅ Validação estática concluída: Nenhum recurso externo encontrado no HTML."
           fi
 
-      # Verifica a existência dos arquivos principais na estrutura atualizada
+      # Verifica a existência dos arquivos principais
       - name: Validar estrutura de arquivos obrigatórios
         run: |
           test -f index.html || (echo "❌ index.html não encontrado!" && exit 1)
