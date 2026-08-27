@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Content Security Policy (CSP) Rígida -->
+    <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' data: blob:;
+    font-src 'self';
+    connect-src 'self';
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+  ">
+
+    <title>Steganography Suite</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <div class="badge">Esteganografia</div>
+            <h1>Steganography Suite</h1>
+            <p>Ferramenta de análise forense, injeção e extração de payload em mídias (PNG, JPG, GIF, BMP, WEBP).</p>
+        </header>
+
+        <!-- Navegação por Abas -->
+        <nav class="tabs-nav">
+            <button class="tab-btn active" data-tab="tab-detect">🔍 Análise &amp; Detecção</button>
+            <button class="tab-btn" data-tab="tab-join">🛠️ Juntar (Ocultar)</button>
+            <button class="tab-btn" data-tab="tab-extract">🔓 Extrair (Separar)</button>
+        </nav>
+
+        <main class="card">
+
+            <!-- ABA 1: ANALISAR / DETECTAR -->
+            <section id="tab-detect" class="tab-content active">
+                <div class="drop-zone" id="detectDropZone">
+                    <input type="file" id="detectFileInput"
+                        accept="image/png, image/jpeg, image/gif, image/bmp, image/webp">
+                    <div class="upload-icon">🔍</div>
+                    <h3>Arraste uma imagem para analisar</h3>
+                    <p>Suporta PNG, JPG, GIF, BMP e WEBP</p>
+                </div>
+
+                <div class="result-section hidden" id="detectResult">
+                    <div class="file-preview-bar">
+                        <img id="detectPreview" class="preview-thumb" alt="Preview">
+                        <div class="file-details">
+                            <h4 id="detectFileName">-</h4>
+                            <p id="detectFileSize">-</p>
+                        </div>
+                    </div>
+
+                    <div id="detectStatusBanner" class="status-banner clean">
+                        <div class="status-text">
+                            <h3 id="detectStatusTitle">-</h3>
+                            <p id="detectStatusDesc">-</p>
+                        </div>
+                    </div>
+
+                    <div class="metadata-grid">
+                        <div class="meta-box"><label>Formato</label><span id="detectMetaFormat">-</span></div>
+                        <div class="meta-box"><label>Tamanho Estimado</label><span id="detectMetaExpected">-</span>
+                        </div>
+                        <div class="meta-box"><label>Bytes Extras (EOF)</label><span id="detectMetaExtra">-</span></div>
+                        <div class="meta-box"><label>Tipo Oculto</label><span id="detectMetaType">-</span></div>
+                    </div>
+
+                    <div class="hex-container">
+                        <div class="hex-title">Inspeção dos Bytes de Transição</div>
+                        <pre class="hex-viewer" id="detectHexViewer">-</pre>
+                    </div>
+
+                    <!-- BOTÃO LIMPAR ABA 1 -->
+                    <button id="btnResetDetect" class="btn-action secondary margin-top">🧹 Nova Análise</button>
+                </div>
+            </section>
+
+            <!-- ABA 2: JUNTAR (INJETAR) -->
+            <section id="tab-join" class="tab-content">
+                <form id="joinForm" onsubmit="return false;">
+                    <div class="grid-inputs">
+                        <div class="drop-zone compact" id="joinImgDropZone">
+                            <input type="file" id="joinImgInput"
+                                accept="image/png, image/jpeg, image/gif, image/bmp, image/webp" required>
+                            <div class="upload-icon">🖼️</div>
+                            <h3>1. Selecione a Imagem Base</h3>
+                            <p id="joinImgName">Nenhum arquivo selecionado</p>
+                        </div>
+
+                        <div class="drop-zone compact" id="joinSecretDropZone">
+                            <input type="file" id="joinSecretInput" required>
+                            <div class="upload-icon">📦</div>
+                            <h3>2. Selecione o Arquivo Secreto</h3>
+                            <p id="joinSecretName">ZIP, RAR, PDF, TXT, etc.</p>
+                        </div>
+                    </div>
+
+                    <!-- BANNER DE SUCESSO DE JUNÇÃO -->
+                    <div id="joinStatusBanner" class="status-banner clean hidden">
+                        <div class="status-text">
+                            <h3>✅ Arquivos Concatena dos com Sucesso!</h3>
+                            <p>O download da imagem modificada foi iniciado.</p>
+                        </div>
+                    </div>
+
+                    <div class="action-grid">
+                        <button id="btnResetJoin" class="btn-action secondary">🧹 Limpar Campos</button>
+                        <button id="joinBtn" class="btn-action" disabled>Ocultar Arquivo na Imagem</button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- ABA 3: EXTRAIR -->
+            <section id="tab-extract" class="tab-content">
+                <div class="drop-zone" id="extractDropZone">
+                    <input type="file" id="extractFileInput"
+                        accept="image/png, image/jpeg, image/gif, image/bmp, image/webp">
+                    <div class="upload-icon">🔓</div>
+                    <h3>Arraste a imagem modificada para separar</h3>
+                    <p>O sistema identificará o ponto de corte e separará a imagem do payload secreto.</p>
+                </div>
+
+                <div class="result-section hidden" id="extractResult">
+                    <div id="extractStatusBanner" class="status-banner suspicious">
+                        <div class="status-text">
+                            <h3 id="extractStatusTitle">-</h3>
+                            <p id="extractStatusDesc">-</p>
+                        </div>
+                    </div>
+
+                    <div class="action-grid">
+                        <button id="btnDownloadCleanImg" class="btn-action secondary">Baixar Imagem Limpa</button>
+                        <button id="btnDownloadPayload" class="btn-action">Baixar Payload Oculto</button>
+                    </div>
+
+                    <!-- BOTÃO LIMPAR ABA 3 -->
+                    <button id="btnResetExtract" class="btn-action secondary margin-top">🧹 Nova Extração</button>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <i>Desenvolvido por <b>Marcelo Soares</b> | Especialista em Segurança da Informação e Computação
+                Forense.</i>
+        </footer>
+    </div>
+
+    <script src="assets/js/script.js"></script>
+</body>
+
+</html>

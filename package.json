@@ -1,0 +1,27 @@
+{
+  "name": "steganography-suite",
+  "version": "1.0.0",
+  "description": "> **Suíte Client-Side de Análise Forense, Injeção e Extração de Esteganografia via Concatenação.**",
+  "main": "assets/js/script.js",
+  "type": "module",
+  "scripts": {
+    "lint:html": "htmlhint index.html",
+    "lint:css": "stylelint assets/css/*.css",
+    "lint:js": "eslint assets/js/*.js",
+    "lint": "npm run lint:html && npm run lint:css && npm run lint:js",
+    "lint:css:fix": "stylelint assets/css/*.css --fix",
+    "lint:js:fix": "eslint assets/js/*.js --fix",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Marcelo Soares",
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0",
+    "htmlhint": "^1.9.2",
+    "stylelint": "^17.14.1",
+    "stylelint-config-standard": "^40.0.0"
+  }
+}

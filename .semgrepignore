@@ -1,0 +1,12 @@
+# Dependências e Builds
+node_modules/
+dist/
+vendor/
+
+# Arquivos Minificados
+*.min.js
+*.min.css
+
+# Relatórios e Dumps
+*.sarif
+*.json

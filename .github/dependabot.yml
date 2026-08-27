@@ -1,0 +1,52 @@
+# Configuração do GitHub Dependabot para o Steganography Suite
+version: 2
+updates:
+  # 1. GitHub Actions (Workflows e Reusable Actions)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci/cd"
+      - "security"
+    commit-message:
+      prefix: "build(deps-dev)"
+      include: "scope"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      actions-dependencies:
+        patterns:
+          - "*"
+
+  # 2. JavaScript / Node.js (DevDependencies: ESLint, HTMLHint, Stylelint)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "fix(deps-js)"
+      include: "scope"
+    groups:
+      linting-tools:
+        patterns:
+          - "eslint*"
+          - "stylelint*"
+          - "htmlhint*"

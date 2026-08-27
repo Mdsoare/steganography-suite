@@ -1,0 +1,12 @@
+# Configuração do markdownlint-cli2 para o repositório Linux Security Audit Checklist
+config:  
+  MD013: false # Ignora comprimento de linha
+  MD022: false # Ignora espaçamento de títulos
+  MD024: false # Permite títulos duplicados se estiverem em seções diferentes (opcional)
+  MD031: false # Ignora espaçamento de blocos de código
+  MD047: false # Ignora exigência de quebra de linha no fim do arquivo
+    
+# Ignorar pastas de sistema ou dependências se houverem
+ignores:
+  - "node_modules"
+  - "LICENSE"

@@ -1,0 +1,33 @@
+{
+  "horusecCwd": "./",
+  "filterPath": "",
+  "certInsecureSkipVerify": false,
+  "certPath": "",
+  "type": "git",
+  "gitURL": "",
+  "lintVersion": "latest",
+  "repositoryAuthorization": "",
+  "returnErrorIfFoundVulnerability": true,
+  "showProjectTypes": false,
+  "printOutputType": "text",
+  "jsonOutputFilePath": "",
+  "severitiesToIgnore": [
+    "INFO"
+  ],
+  "ignoreFilesCustomRules": [
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/dist/**",
+    "**/*.min.js",
+    "**/*.min.css"
+  ],
+  "ignoreRules": [
+    "HS-LEAKS-9",
+    "HS-JAVASCRIPT-1",
+    "HS-JAVASCRIPT-2",
+    "HS-JAVASCRIPT-3",
+    "HS-JAVASCRIPT-11"
+  ],
+  "toolsToIgnore": [],
+  "customRules": []
+}
