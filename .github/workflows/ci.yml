@@ -135,8 +135,8 @@ jobs:
           bash install_horusec.sh latest
           rm -f install_horusec.sh
 
-          # Executa a análise SAST utilizando o arquivo de configuração explicitamente
-          horusec start -p="./" --config-file-path="./.horusec-config.json" -D -I -e="false" -o="sarif" -O="./horusec-results.sarif" || true
+          # Executa a análise SAST utilizando o arquivo de configuração explicitamente          
+          horusec start -p="./" -D -I -e="false" -o="sarif" -O="./horusec-results.sarif" || true
 
       - name: Tratar Arquivo SARIF do Horusec Ausente
         if: always()
