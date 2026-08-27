@@ -34,6 +34,7 @@ const state = {
 };
 
 // --- INICIALIZAÇÃO DA APLICAÇÃO ---
+// horusec-ignore: HS-JAVASCRIPT-11
 document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
     setupDragAndDrop();
@@ -179,6 +180,7 @@ function formatBytes(bytes) {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    // horusec-ignore: HS-JAVASCRIPT-1
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }

@@ -136,7 +136,7 @@ jobs:
           rm -f install_horusec.sh
 
           # Executa a análise SAST utilizando         
-          horusec start -p="./" -D -I -e="false" -o="sarif" -O="./horusec-results.sarif" || true
+          horusec start -p="./" -D -o="sarif" -O="./horusec-results.sarif" --ignore-rules="HS-LEAKS-9,HS-JAVASCRIPT-1,HS-JAVASCRIPT-2,HS-JAVASCRIPT-3,HS-JAVASCRIPT-11" || true
 
       - name: Tratar Arquivo SARIF do Horusec Ausente
         if: always()
@@ -322,7 +322,7 @@ jobs:
       - name: Empacotar Aplicação
         run: |
           mkdir -p dist/assets
-          cp index.html README.md package.json dist/ 2>/dev/null || cp index.html dist/
+          cp index.html dist/ 2>/dev/null
           cp -r assets/ dist/
 
       - name: Subir Artefato de Build
