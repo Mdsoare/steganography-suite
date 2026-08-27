@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
 
@@ -41,7 +41,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
 
@@ -59,7 +59,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Configurar ambiente Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -88,7 +88,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Lint Markdown Files
         uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff
@@ -104,7 +104,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Inicializar CodeQL
         uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28
@@ -124,7 +124,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Run Horusec Security Scan
         run: |
@@ -162,7 +162,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
 
@@ -207,7 +207,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Configurar ambiente Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -240,7 +240,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Executar Varredura Trivy (Repository)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
@@ -266,7 +266,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Check for Unauthorized External Scripts and Styles
         run: |
@@ -317,7 +317,7 @@ jobs:
 
     steps:
       - name: Checkout do Repositório
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Empacotar Aplicação
         run: |
