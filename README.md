@@ -83,13 +83,13 @@ Por ser uma aplicação totalmente _Client-Side_, você não precisa instalar o 
    git clone https://github.com/Mdsoare/steganography-suite.git
    ```
 
-1. Abra a pasta do projeto.
+2. Abra a pasta do projeto.
 
-```bash
-cd steganography-suite
-```
+   ```bash
+   cd steganography-suite
+   ```
 
-1. Clique duas vezes no arquivo `index.html` para executá-lo em qualquer navegador moderno.
+3. Clique duas vezes no arquivo `index.html` para executá-lo em qualquer navegador moderno.
 
 ---
 
