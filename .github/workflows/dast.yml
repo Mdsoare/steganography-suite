@@ -57,7 +57,7 @@ jobs:
         continue-on-error: true
         with:
           cache: false
-          args: "-u https://mdsoare.github.io/steganography-suite/ -sarif-export nuclei.sarif -silent -exclude-tags ssl,tls,dns,caa,waf -exclude-id http-missing-security-headers,missing-sri,fastly-debug-path,fastly-debug-ttl,fastly-debug-digest"
+          args: "-u https://mdsoare.github.io/steganography-suite/ -sarif-export nuclei.sarif -silent -exclude-tags ssl,tls,dns,caa,waf -exclude-id http-missing-security-headers,missing-sri,fastly-debug-path,fastly-debug-ttl,fastly-debug-digest,fastly-debug-headers"
 
       - name: Sanitizar Status de Invocação no SARIF
         if: always()

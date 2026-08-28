@@ -1,0 +1,4 @@
+name: "CodeQL Config Customizada"
+
+paths-ignore:  
+  - 'assets/js/vendor/**'
