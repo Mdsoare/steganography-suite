@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       - name: Scan para detecção de segredos
-        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318
+        uses: trufflesecurity/trufflehog@20652fbbdefffcdaa493a5bf57ab2ac6b1db715b
 
   # -------------------------------------------------------------
   # JOB 2: Detecção de Segredos (Gitleaks)
@@ -77,7 +77,7 @@ jobs:
         run: npx stylelint "assets/css/**/*.css" --fix
 
       - name: Análise Estática de Código JavaScript (ESLint)
-        run: npx eslint assets/js/script.js --fix
+        run: npx eslint "assets/js/**/*.js" --fix
 
   # -------------------------------------------------------------
   # JOB 4: Qualidade de Sintaxe Docs (Markdown)
@@ -284,7 +284,12 @@ jobs:
       - name: Validar estrutura de arquivos obrigatórios
         run: |
           test -f index.html || (echo "❌ index.html não encontrado!" && exit 1)
-          test -f assets/js/script.js || (echo "❌ assets/js/script.js não encontrado!" && exit 1)
+          
+          # Verifica se existe pelo menos um arquivo .js na pasta assets/js/
+          if ! ls assets/js/*.js 1> /dev/null 2>&1; then
+            echo "❌ Nenhum arquivo JS encontrado em assets/js/!"
+            exit 1
+          fi
 
           # Verifica se existe pelo menos um arquivo .css na pasta assets/css/
           if ! ls assets/css/*.css 1> /dev/null 2>&1; then
