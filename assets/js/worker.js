@@ -10,7 +10,7 @@ const SIGNATURES = {
     JPEG_END: [0xFF, 0xD9],
     GIF_HEADER: [0x47, 0x49, 0x46, 0x38],
     AVI_HEADER: [0x52, 0x49, 0x46, 0x46],
-    
+
     PAYLOADS: [
         { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar', label: 'Arquivo RAR' },
         { bytes: [0x50, 0x4B, 0x03, 0x04], ext: 'zip', label: 'Arquivo ZIP' },
@@ -47,7 +47,7 @@ function findMediaEOF(buffer, fileName = '') {
             }
             offset += 12 + chunkSize;
         }
-    } 
+    }
 
     // 2. JPEG (Parsing Sequencial de Segmentos)
     else if (matchSignature(view, SIGNATURES.JPEG_HEADER)) {
@@ -124,12 +124,16 @@ function findMediaEOF(buffer, fileName = '') {
 }
 
 self.onmessage = function (e) {
-    const { action, buffer, fileName } = e.data;
+    if (e.origin && e.origin !== self.location.origin) {
+        return;
+    }
 
-    if (action === 'ANALYZE_MEDIA') {
+    const { action, buffer, fileName } = e.data || {};
+
+    if (action === 'ANALYZE_MEDIA' && buffer) {
         const view = new DataView(buffer);
         const { eof, format } = findMediaEOF(buffer, fileName);
-        
+
         let hiddenType = 'Dados Genéricos';
         let extraBytes = 0;
 
