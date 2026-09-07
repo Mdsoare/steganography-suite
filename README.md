@@ -49,7 +49,7 @@ A **Steganography Suite** analisa e explora essa característica ao injetar payl
     - **Inspeção Ampla de Assinaturas (Magic Bytes):** Identificação e parsing estrutural de formatos **PNG, JPEG, GIF, BMP, RIFF (AVI/WAV) e MP4/ISOBMFF** (suporte a ponteiros 64-bit via `BigInt`/`DataView`).
     - **Detecção de Anomalias no EOF:** Cálculo dinâmico do tamanho estrutural esperado da mídia versus tamanho real do arquivo para identificação exata de concatenações atípicas.
     - **Identificação Automática do Payload:** Reconhecimento de assinaturas embutidas como **ZIP, RAR, 7z, PDF, Executáveis (PE/ELF)** logo após o EOF da mídia.
-    - **Inspecionador Hexadecimal Embutido:** Exibição do *Hex Dump* formatado (Endereço, Hex, ASCII) diretamente no ponto de transição e início do arquivo.
+    - **Inspecionador Hexadecimal Embutido:** Exibição do _Hex Dump_ formatado (Endereço, Hex, ASCII) diretamente no ponto de transição e início do arquivo.
 
 🛠️ 2. Juntar (Ocultar Payload):
     - **Injeção em Memória Local:** Concatenação de arquivos ocultos à imagem de capa diretamente via `Uint8Array` no navegador.
@@ -60,7 +60,7 @@ A **Steganography Suite** analisa e explora essa característica ao injetar payl
     - **Download Seguro:** Permite baixar separadamente a **Imagem Limpa** (com metadados/EOF restaurados e sem payload) e o **Payload Oculto** (com a extensão de arquivo identificada automaticamente).
 
 🛡️ 4. Arquitetura de Segurança & Compliance:
-    - **Proteção Anticlone e Clickjacking:** Mecanismo defensivo de *Frame Busting* para mitigar o enquadramento em `iframe` em hospedagens estáticas (GitHub Pages).
+    - **Proteção Anticlone e Clickjacking:** Mecanismo defensivo de _Frame Busting_ para mitigar o enquadramento em `iframe` em hospedagens estáticas (GitHub Pages).
     - **Content Security Policy (CSP):** Configurações rígidas de política de conteúdo autorizando unicamente scripts da própria origem e suporte seguro a `worker-src` e recursos Blob.
     - **Sanitização de Eventos:** Tratamento estrito de mensagens e validação de `origin` em conformidade com as regras de análise estática do CodeQL.
 
@@ -68,12 +68,12 @@ A **Steganography Suite** analisa e explora essa característica ao injetar payl
 
 ## 🔒 Arquitetura de Segurança e Boas Práticas
 
-A aplicação foi desenvolvida sob o conceito de **Defesa em Profundidade (Defense in Depth)**, priorizando execução segura e isolada *client-side*:
+A aplicação foi desenvolvida sob o conceito de **Defesa em Profundidade (Defense in Depth)**, priorizando execução segura e isolada _client-side_:
 
 - **Frontend & Core:** HTML5, CSS3 Puro (Dark Theme) e Vanilla JavaScript (ES6+) sem dependências externas de runtime.
 - **Off-Thread Processing (Web Workers):** Isolamento de rotinas pesadas de parsing em thread secundária (`worker.js`), mantendo a UI totalmente responsiva sem bloquear a thread principal.
 - **Content Security Policy (CSP) Rígida:** Proteção robusta contra ataques XSS (_Cross-Site Scripting_) e injeções de código, com controle estrito para `worker-src 'self' blob:` e restrição de recursos de terceiros.
-- **Proteção Anticlone (Anti-Clickjacking):** Implementação defensiva de *Frame Busting* para evitar o enquadramento não autorizado da ferramenta em `iframe` em plataformas estáticas (GitHub Pages).
+- **Proteção Anticlone (Anti-Clickjacking):** Implementação defensiva de _Frame Busting_ para evitar o enquadramento não autorizado da ferramenta em `iframe` em plataformas estáticas (GitHub Pages).
 - **Conformidade de Análise Estática (SAST):** Código auditado e higienizado com validação de `origin` em eventos de mensagens inter-processos (`postMessage`), em estrito cumprimento às diretrizes do GitHub CodeQL.
 - **Privacidade & Execução Local:** Manipulação binária direta via `ArrayBuffer`, `DataView` (com parsing BigInt 64-bit) e `Uint8Array`. Zero tráfego de dados na rede — os arquivos nunca saem do seu navegador.
 - **Gestão Consciente de Memória:** Desalocação ativa de ponteiros e liberação de buffers em memória utilizando `URL.revokeObjectURL()` imediatamente após o processamento dos downloads.
