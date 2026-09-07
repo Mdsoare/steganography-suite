@@ -162,7 +162,7 @@ header p {
     margin-bottom: 1.5rem;
 }
 
-@media (width <=600px) {
+@media (max-width: 600px) {
     .grid-inputs {
         grid-template-columns: 1fr;
     }
@@ -277,10 +277,20 @@ header p {
     margin-bottom: 1rem;
 }
 
-.preview-thumb {
-    width: 48px;
-    height: 48px;
+.preview-container {
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.4);
     border-radius: 6px;
+    overflow: hidden;
+}
+
+.preview-thumb {
+    max-width: 100%;
+    max-height: 100%;
     object-fit: cover;
 }
 

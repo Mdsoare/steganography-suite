@@ -5,20 +5,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- Content Security Policy (CSP) Rígida -->
     <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
     script-src 'self';
+    worker-src 'self' blob:;
     style-src 'self' 'unsafe-inline';
     img-src 'self' data: blob:;
+    media-src 'self' blob:;
     font-src 'self';
     connect-src 'self';
     object-src 'none';
     base-uri 'self';
     form-action 'self';
-  ">
+    ">
 
-    <title>Steganography Suite</title>
+    <title>Steganography Suite PRO</title>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 
@@ -26,33 +27,31 @@
 
     <div class="container">
         <header>
-            <div class="badge">Esteganografia</div>
-            <h1>Steganography Suite</h1>
-            <p>Ferramenta de análise forense, injeção e extração de payload em mídias (PNG, JPG, GIF, BMP, WEBP).</p>
+            <div class="badge">Análise Forense &amp; Esteganografia Múltipla</div>
+            <h1>Steganography Suite PRO</h1>
+            <p>Ocultação, detecção e extração forense de payloads em Imagens, Vídeos e Áudios.</p>
         </header>
 
-        <!-- Navegação por Abas -->
         <nav class="tabs-nav">
-            <button class="tab-btn active" data-tab="tab-detect">🔍 Análise &amp; Detecção</button>
-            <button class="tab-btn" data-tab="tab-join">🛠️ Juntar (Ocultar)</button>
-            <button class="tab-btn" data-tab="tab-extract">🔓 Extrair (Separar)</button>
+            <button class="tab-btn active" data-tab="tab-detect" type="button">🔍 Análise &amp; Detecção</button>
+            <button class="tab-btn" data-tab="tab-join" type="button">🛠️ Juntar (Ocultar)</button>
+            <button class="tab-btn" data-tab="tab-extract" type="button">🔓 Extrair (Separar)</button>
         </nav>
 
         <main class="card">
 
-            <!-- ABA 1: ANALISAR / DETECTAR -->
             <section id="tab-detect" class="tab-content active">
                 <div class="drop-zone" id="detectDropZone">
                     <input type="file" id="detectFileInput"
-                        accept="image/png, image/jpeg, image/gif, image/bmp, image/webp">
+                        accept="image/*,video/*,audio/*,.png,.jpg,.jpeg,.gif,.bmp,.webp,.mp4,.mkv,.avi,.webm,.mov,.mp3,.wav,.ogg">
                     <div class="upload-icon">🔍</div>
-                    <h3>Arraste uma imagem para analisar</h3>
-                    <p>Suporta PNG, JPG, GIF, BMP e WEBP</p>
+                    <h3>Arraste uma mídia para analisar</h3>
+                    <p>Suporta Imagens (PNG, JPG, WEBP, GIF, BMP), Vídeos (MP4, MKV, AVI, WEBM) e Áudios (MP3, WAV)</p>
                 </div>
 
                 <div class="result-section hidden" id="detectResult">
                     <div class="file-preview-bar">
-                        <img id="detectPreview" class="preview-thumb" alt="Preview">
+                        <div id="mediaPreviewContainer" class="preview-container"></div>
                         <div class="file-details">
                             <h4 id="detectFileName">-</h4>
                             <p id="detectFileSize">-</p>
@@ -67,32 +66,31 @@
                     </div>
 
                     <div class="metadata-grid">
-                        <div class="meta-box"><label>Formato</label><span id="detectMetaFormat">-</span></div>
-                        <div class="meta-box"><label>Tamanho Estimado</label><span id="detectMetaExpected">-</span>
+                        <div class="meta-box"><label>Formato Container</label><span id="detectMetaFormat">-</span></div>
+                        <div class="meta-box"><label>Tamanho Oficial (EOF)</label><span id="detectMetaExpected">-</span>
                         </div>
-                        <div class="meta-box"><label>Bytes Extras (EOF)</label><span id="detectMetaExtra">-</span></div>
-                        <div class="meta-box"><label>Tipo Oculto</label><span id="detectMetaType">-</span></div>
+                        <div class="meta-box"><label>Bytes Extras / Anomalia</label><span id="detectMetaExtra">-</span>
+                        </div>
+                        <div class="meta-box"><label>Assinatura Oculta</label><span id="detectMetaType">-</span></div>
                     </div>
 
                     <div class="hex-container">
-                        <div class="hex-title">Inspeção dos Bytes de Transição</div>
+                        <div class="hex-title">Inspeção Forense dos Bytes de Transição</div>
                         <pre class="hex-viewer" id="detectHexViewer">-</pre>
                     </div>
 
-                    <!-- BOTÃO LIMPAR ABA 1 -->
-                    <button id="btnResetDetect" class="btn-action secondary margin-top">🧹 Nova Análise</button>
+                    <button id="btnResetDetect" type="button" class="btn-action secondary margin-top">🧹 Nova
+                        Análise</button>
                 </div>
             </section>
 
-            <!-- ABA 2: JUNTAR (INJETAR) -->
             <section id="tab-join" class="tab-content">
                 <form id="joinForm" onsubmit="return false;">
                     <div class="grid-inputs">
                         <div class="drop-zone compact" id="joinImgDropZone">
-                            <input type="file" id="joinImgInput"
-                                accept="image/png, image/jpeg, image/gif, image/bmp, image/webp" required>
-                            <div class="upload-icon">🖼️</div>
-                            <h3>1. Selecione a Imagem Base</h3>
+                            <input type="file" id="joinImgInput" accept="image/*,video/*,audio/*" required>
+                            <div class="upload-icon">🎬</div>
+                            <h3>1. Selecione a Mídia Portadora</h3>
                             <p id="joinImgName">Nenhum arquivo selecionado</p>
                         </div>
 
@@ -100,33 +98,30 @@
                             <input type="file" id="joinSecretInput" required>
                             <div class="upload-icon">📦</div>
                             <h3>2. Selecione o Arquivo Secreto</h3>
-                            <p id="joinSecretName">ZIP, RAR, PDF, TXT, etc.</p>
+                            <p id="joinSecretName">ZIP, RAR, PDF, TXT, EXE, etc.</p>
                         </div>
                     </div>
 
-                    <!-- BANNER DE SUCESSO DE JUNÇÃO -->
                     <div id="joinStatusBanner" class="status-banner clean hidden">
                         <div class="status-text">
-                            <h3>✅ Arquivos Concatena dos com Sucesso!</h3>
-                            <p>O download da imagem modificada foi iniciado.</p>
+                            <h3>✅ Injeção Realizada com Sucesso!</h3>
+                            <p>O download da mídia stego modificada foi processado.</p>
                         </div>
                     </div>
 
                     <div class="action-grid">
-                        <button id="btnResetJoin" class="btn-action secondary">🧹 Limpar Campos</button>
-                        <button id="joinBtn" class="btn-action" disabled>Ocultar Arquivo na Imagem</button>
+                        <button id="btnResetJoin" type="button" class="btn-action secondary">🧹 Limpar Campos</button>
+                        <button id="joinBtn" type="button" class="btn-action" disabled>Ocultar Payload na Mídia</button>
                     </div>
                 </form>
             </section>
 
-            <!-- ABA 3: EXTRAIR -->
             <section id="tab-extract" class="tab-content">
                 <div class="drop-zone" id="extractDropZone">
-                    <input type="file" id="extractFileInput"
-                        accept="image/png, image/jpeg, image/gif, image/bmp, image/webp">
+                    <input type="file" id="extractFileInput" accept="image/*,video/*,audio/*">
                     <div class="upload-icon">🔓</div>
-                    <h3>Arraste a imagem modificada para separar</h3>
-                    <p>O sistema identificará o ponto de corte e separará a imagem do payload secreto.</p>
+                    <h3>Arraste a mídia modificada para extração</h3>
+                    <p>Identifica pontos de corte de container e extrai a mídia limpa e o payload anexado.</p>
                 </div>
 
                 <div class="result-section hidden" id="extractResult">
@@ -138,23 +133,24 @@
                     </div>
 
                     <div class="action-grid">
-                        <button id="btnDownloadCleanImg" class="btn-action secondary">Baixar Imagem Limpa</button>
-                        <button id="btnDownloadPayload" class="btn-action">Baixar Payload Oculto</button>
+                        <button id="btnDownloadCleanImg" type="button" class="btn-action secondary">Baixar Mídia
+                            Limpa</button>
+                        <button id="btnDownloadPayload" type="button" class="btn-action">Baixar Payload Oculto</button>
                     </div>
 
-                    <!-- BOTÃO LIMPAR ABA 3 -->
-                    <button id="btnResetExtract" class="btn-action secondary margin-top">🧹 Nova Extração</button>
+                    <button id="btnResetExtract" type="button" class="btn-action secondary margin-top">🧹 Nova
+                        Extração</button>
                 </div>
             </section>
         </main>
 
         <footer>
-            <i>Desenvolvido por <b>Marcelo Soares</b> | Especialista em Segurança da Informação e Computação
+            <i>Desenvolvido por <b>Marcelo Soares</b> | Especialista em Segurança da Informação, DevSecOps e Computação
                 Forense.</i>
         </footer>
     </div>
 
-    <script src="assets/js/script.js"></script>
+    <script src="assets/js/script.js" type="module"></script>
 </body>
 
 </html>
