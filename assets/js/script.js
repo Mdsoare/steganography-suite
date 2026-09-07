@@ -1,21 +1,18 @@
 /**
  * StegoSuite PRO - Script Principal
- * Práticas: Strict Mode, Web Workers, DataView Parsing e Gestão Limpa de DOM.
  */
-
 'use strict';
 
-// Proteção básica de Frame Busting para GitHub Pages
+// Proteção básica de Frame Busting
 if (self !== top) {
     try {
         top.location = self.location;
     } catch (e) {
-        // Se o iframe estiver sandboxed sem allow-top-navigation, redefine a interface
         document.body.innerHTML = '<h1>Acesso não permitido em iframes.</h1>';
     }
 }
 
-// Instanciação do Worker para processamento assíncrono off-thread
+// Instanciação do Worker
 const forensicWorker = new Worker('worker.js');
 
 const state = {
@@ -69,6 +66,7 @@ function setupWorkerListeners() {
 
 // --- DETECÇÃO & PROCESSAMENTO ---
 function handleDetectFile(file) {
+    if (!file) return;
     state.detectFile = file;
     document.getElementById('detectFileName').textContent = file.name;
     document.getElementById('detectFileSize').textContent = formatBytes(file.size);
@@ -77,7 +75,7 @@ function handleDetectFile(file) {
     state.activePreviewUrl = URL.createObjectURL(file);
 
     const container = document.getElementById('mediaPreviewContainer');
-    container.textContent = ''; // Limpeza limpa de DOM
+    container.textContent = '';
 
     if (file.type.startsWith('image/')) {
         const img = document.createElement('img');
@@ -101,22 +99,222 @@ function handleDetectFile(file) {
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
-        
-        // Gera o Hex Viewer na UI (apenas os primeiros/últimos bytes para economizar renderização)
         const sampleView = new DataView(buffer);
         document.getElementById('detectHexViewer').textContent = bytesToHexDump(sampleView, 0, Math.min(buffer.byteLength, 256));
 
-        // Envia o processamento pesado para a Thread Secundária
         forensicWorker.postMessage({
             action: 'ANALYZE_MEDIA',
             buffer: buffer,
             fileName: file.name
-        }, [buffer]); // ArrayBuffer Transferível para consumo de memória 0-copy
+        }, [buffer]);
     };
     reader.readAsArrayBuffer(file);
 }
 
-// --- AUXILIARES SEGUROS DE PARSING E DUMP ---
+// --- DRAG AND DROP & INPUTS ---
+function setupDragAndDrop() {
+    const dropZones = [
+        { zone: document.getElementById('detectDropZone'), input: document.getElementById('detectFileInput'), handler: handleDetectFile },
+        { zone: document.getElementById('joinImgDropZone'), input: document.getElementById('joinImgInput'), handler: handleJoinImgFile },
+        { zone: document.getElementById('joinSecretDropZone'), input: document.getElementById('joinSecretInput'), handler: handleJoinSecretFile },
+        { zone: document.getElementById('extractDropZone'), input: document.getElementById('extractFileInput'), handler: handleExtractFile }
+    ];
+
+    dropZones.forEach(({ zone, input, handler }) => {
+        if (!zone || !input) return;
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            zone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            zone.addEventListener(eventName, () => zone.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            zone.addEventListener(eventName, () => zone.classList.remove('dragover'), false);
+        });
+
+        zone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                input.files = files;
+                handler(files[0]);
+            }
+        }, false);
+
+        input.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handler(e.target.files[0]);
+            }
+        });
+    });
+}
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+// --- HANDLERS DAS ABAS JUNTAR E EXTRAIR ---
+function handleJoinImgFile(file) {
+    state.joinImgFile = file;
+    document.getElementById('joinImgName').textContent = `${file.name} (${formatBytes(file.size)})`;
+    checkJoinReady();
+}
+
+function handleJoinSecretFile(file) {
+    state.joinSecretFile = file;
+    document.getElementById('joinSecretName').textContent = `${file.name} (${formatBytes(file.size)})`;
+    checkJoinReady();
+}
+
+function checkJoinReady() {
+    const btn = document.getElementById('joinBtn');
+    btn.disabled = !(state.joinImgFile && state.joinSecretFile);
+}
+
+function handleExtractFile(file) {
+    state.extractFile = file;
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const buffer = e.target.result;
+
+        // Processamento local de corte/extração
+        const view = new DataView(buffer);
+        const eofInfo = findEofLocally(view, file.name);
+
+        const resultSection = document.getElementById('extractResult');
+        resultSection.classList.remove('hidden');
+
+        if (eofInfo.eof === -1 || buffer.byteLength <= eofInfo.eof) {
+            setBanner('extractStatusBanner', 'warning', 'Nenhum Payload Encontrado', 'A mídia selecionada não possui dados concatenados anexados.');
+            document.getElementById('btnDownloadCleanImg').style.display = 'none';
+            document.getElementById('btnDownloadPayload').style.display = 'none';
+            return;
+        }
+
+        const cleanBuffer = buffer.slice(0, eofInfo.eof);
+        const payloadBuffer = buffer.slice(eofInfo.eof);
+
+        state.extractedData.cleanImgBlob = new Blob([cleanBuffer], { type: file.type || 'application/octet-stream' });
+        state.extractedData.payloadBlob = new Blob([payloadBuffer], { type: 'application/octet-stream' });
+
+        setBanner('extractStatusBanner', 'suspicious', 'Payload Oculto Extraído!', `Foram isolados ${formatBytes(payloadBuffer.byteLength)} de payload da mídia original.`);
+        document.getElementById('btnDownloadCleanImg').style.display = 'inline-block';
+        document.getElementById('btnDownloadPayload').style.display = 'inline-block';
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// --- CONFIGURAÇÃO DE EVENTOS DE BOTÕES ---
+function setupEventListeners() {
+    // Ação: Juntar Mídia + Secret
+    document.getElementById('joinBtn').addEventListener('click', () => {
+        if (!state.joinImgFile || !state.joinSecretFile) return;
+
+        const readerImg = new FileReader();
+        readerImg.onload = function (e1) {
+            const imgBuffer = e1.target.result;
+
+            const readerSecret = new FileReader();
+            readerSecret.onload = function (e2) {
+                const secretBuffer = e2.target.result;
+
+                // Concatenação em Uint8Array
+                const combined = new Uint8Array(imgBuffer.byteLength + secretBuffer.byteLength);
+                combined.set(new Uint8Array(imgBuffer), 0);
+                combined.set(new Uint8Array(secretBuffer), imgBuffer.byteLength);
+
+                const blob = new Blob([combined], { type: state.joinImgFile.type || 'application/octet-stream' });
+                downloadBlob(blob, `stego_${state.joinImgFile.name}`);
+
+                document.getElementById('joinStatusBanner').classList.remove('hidden');
+            };
+            readerSecret.readAsArrayBuffer(state.joinSecretFile);
+        };
+        readerImg.readAsArrayBuffer(state.joinImgFile);
+    });
+
+    // Botões de Download da Extração
+    document.getElementById('btnDownloadCleanImg').addEventListener('click', () => {
+        if (state.extractedData.cleanImgBlob && state.extractFile) {
+            downloadBlob(state.extractedData.cleanImgBlob, `clean_${state.extractFile.name}`);
+        }
+    });
+
+    document.getElementById('btnDownloadPayload').addEventListener('click', () => {
+        if (state.extractedData.payloadBlob) {
+            downloadBlob(state.extractedData.payloadBlob, `extracted_payload.bin`);
+        }
+    });
+
+    // Botões de Limpeza / Reset
+    document.getElementById('btnResetDetect').addEventListener('click', () => {
+        state.detectFile = null;
+        document.getElementById('detectFileInput').value = '';
+        document.getElementById('detectResult').classList.add('hidden');
+        revokeActivePreview();
+    });
+
+    document.getElementById('btnResetJoin').addEventListener('click', () => {
+        state.joinImgFile = null;
+        state.joinSecretFile = null;
+        document.getElementById('joinImgInput').value = '';
+        document.getElementById('joinSecretInput').value = '';
+        document.getElementById('joinImgName').textContent = 'Nenhum arquivo selecionado';
+        document.getElementById('joinSecretName').textContent = 'ZIP, RAR, PDF, TXT, EXE, etc.';
+        document.getElementById('joinBtn').disabled = true;
+        document.getElementById('joinStatusBanner').classList.add('hidden');
+    });
+
+    document.getElementById('btnResetExtract').addEventListener('click', () => {
+        state.extractFile = null;
+        state.extractedData = { cleanImgBlob: null, payloadBlob: null, payloadExt: 'bin' };
+        document.getElementById('extractFileInput').value = '';
+        document.getElementById('extractResult').classList.add('hidden');
+    });
+}
+
+// --- FUNÇÕES UTILITÁRIAS ---
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+
+function findEofLocally(view, fileName) {
+    const length = view.byteLength;
+
+    // Detecção básica para extração local (PNG / JPEG / BMP)
+    if (length >= 8 && view.getUint8(0) === 0x89 && view.getUint8(1) === 0x50) {
+        let offset = 8;
+        while (offset + 8 <= length) {
+            const chunkSize = view.getUint32(offset, false);
+            if (view.getUint8(offset + 4) === 0x49 && view.getUint8(offset + 5) === 0x45 &&
+                view.getUint8(offset + 6) === 0x4E && view.getUint8(offset + 7) === 0x44) {
+                return { eof: offset + 12 };
+            }
+            offset += 12 + chunkSize;
+        }
+    } else if (length >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xD8) {
+        for (let i = length - 2; i >= 2; i--) {
+            if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
+                return { eof: i + 2 };
+            }
+        }
+    }
+    return { eof: -1 };
+}
+
 function bytesToHexDump(dataView, start, end) {
     let output = '';
     let hex = '';
@@ -166,39 +364,6 @@ function setupTabs() {
             if (targetEl) targetEl.classList.add('active');
         });
     });
-}
-
-function setupDragAndDrop() {
-    const dropZones = [
-        { zone: document.getElementById('detectDropZone'), input: document.getElementById('detectFileInput'), handler: handleDetectFile }
-    ];
-
-    dropZones.forEach(({ zone, input, handler }) => {
-        if (!zone || !input) return;
-
-        ['dragenter', 'dragover'].forEach(eName => {
-            zone.addEventListener(eName, (e) => { e.preventDefault(); zone.classList.add('dragover'); });
-        });
-
-        ['dragleave', 'drop'].forEach(eName => {
-            zone.addEventListener(eName, (e) => { e.preventDefault(); zone.classList.remove('dragover'); });
-        });
-
-        zone.addEventListener('drop', (e) => {
-            if (e.dataTransfer.files.length > 0) {
-                input.files = e.dataTransfer.files;
-                handler(e.dataTransfer.files[0]);
-            }
-        });
-
-        input.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) handler(e.target.files[0]);
-        });
-    });
-}
-
-function setupEventListeners() {
-    // Manter seus eventos de formulário/download originais
 }
 
 function setBanner(id, type, title, desc) {
