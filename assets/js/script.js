@@ -75,7 +75,7 @@ function handleDetectFile(file) {
     state.activePreviewUrl = URL.createObjectURL(file);
 
     const container = document.getElementById('mediaPreviewContainer');
-    container.textContent = '';
+    container.textContent = ''; 
 
     if (file.type.startsWith('image/')) {
         const img = document.createElement('img');
@@ -99,6 +99,7 @@ function handleDetectFile(file) {
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
+        
         const sampleView = new DataView(buffer);
         document.getElementById('detectHexViewer').textContent = bytesToHexDump(sampleView, 0, Math.min(buffer.byteLength, 256));
 
@@ -106,7 +107,7 @@ function handleDetectFile(file) {
             action: 'ANALYZE_MEDIA',
             buffer: buffer,
             fileName: file.name
-        }, [buffer]);
+        });
     };
     reader.readAsArrayBuffer(file);
 }

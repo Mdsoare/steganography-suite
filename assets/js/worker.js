@@ -123,8 +123,8 @@ function findMediaEOF(buffer, fileName = '') {
     return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
 }
 
-self.onmessage = function (e) {
-    if (e.origin && e.origin !== self.location.origin) {
+self.onmessage = function (e) {  
+    if (e.origin && self.location && self.location.origin && e.origin !== 'null' && e.origin !== self.location.origin) {
         return;
     }
 
