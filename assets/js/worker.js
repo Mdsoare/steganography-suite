@@ -33,91 +33,96 @@ function matchSignature(view, target, offset = 0) {
  * Análise Estrutural Baseada em Parsing Real de Segm/Containers
  */
 function findMediaEOF(buffer, fileName = '') {
+    if (!buffer || buffer.byteLength === 0) {
+        return { eof: -1, format: 'Desconhecido' };
+    }
+
     const view = new DataView(buffer);
     const length = view.byteLength;
-    const ext = fileName.split('.').pop().toLowerCase();
+    const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
 
-    // 1. PNG (Verificação de Chunks até IEND)
-    if (matchSignature(view, SIGNATURES.PNG_HEADER)) {
-        let offset = 8;
-        while (offset + 8 <= length) {
-            const chunkSize = view.getUint32(offset, false); // Big-endian seguro
-            if (matchSignature(view, SIGNATURES.PNG_END, offset + 4)) {
-                return { eof: offset + 12, format: 'PNG' }; // Chunk Data + CRC (12 bytes)
-            }
-            offset += 12 + chunkSize;
-        }
-    }
-
-    // 2. JPEG (Parsing Sequencial de Segmentos)
-    else if (matchSignature(view, SIGNATURES.JPEG_HEADER)) {
-        let offset = 2;
-        while (offset < length - 1) {
-            if (view.getUint8(offset) !== 0xFF) {
-                offset++;
-                continue;
-            }
-            const marker = view.getUint8(offset + 1);
-
-            // Marcador SOS (Start of Scan) - Dados de Imagem Iniciam
-            if (marker === 0xDA) {
-                // Procura o EOI (FF D9) a partir do fim para mitigar falsos positivos em scans simples
-                for (let i = length - 2; i >= offset; i--) {
-                    if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
-                        return { eof: i + 2, format: 'JPEG' };
-                    }
+    try {
+        // 1. PNG (Chunks até IEND)
+        if (matchSignature(view, SIGNATURES.PNG_HEADER)) {
+            let offset = 8;
+            while (offset + 12 <= length) {
+                const chunkSize = view.getUint32(offset, false);
+                if (matchSignature(view, SIGNATURES.PNG_END, offset + 4)) {
+                    return { eof: offset + 12, format: 'PNG' };
                 }
-                break;
-            }
-
-            // Pula segmentos com tamanho declarado (SOF, DHT, DQT, etc.)
-            if (offset + 3 < length && marker !== 0xD8 && marker !== 0xD9) {
-                const segLength = view.getUint16(offset + 2, false);
-                offset += 2 + segLength;
-            } else {
-                offset += 2;
+                offset += 12 + chunkSize;
             }
         }
-    }
 
-    // 3. BMP (Uso do DataView Little-Endian)
-    else if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4D) {
-        const size = view.getUint32(2, true); // Little-endian
-        if (size <= length && size > 0) return { eof: size, format: 'BMP' };
-    }
+        // 2. JPEG (Parsing Sequencial)
+        else if (matchSignature(view, SIGNATURES.JPEG_HEADER)) {
+            let offset = 2;
+            while (offset < length - 1) {
+                if (view.getUint8(offset) !== 0xFF) {
+                    offset++;
+                    continue;
+                }
+                const marker = view.getUint8(offset + 1);
 
-    // 4. RIFF Container (AVI / WAV)
-    else if (matchSignature(view, SIGNATURES.AVI_HEADER)) {
-        const riffSize = view.getUint32(4, true); // Little-endian
-        const totalRiff = riffSize + 8;
-        if (totalRiff <= length) return { eof: totalRiff, format: ext.toUpperCase() || 'RIFF Media' };
-    }
+                if (marker === 0xDA) {
+                    for (let i = length - 2; i >= offset; i--) {
+                        if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
+                            return { eof: i + 2, format: 'JPEG' };
+                        }
+                    }
+                    break;
+                }
 
-    // 5. ISOBMFF / MP4 (Tratamento de BigInt 64-bit para arquivos >2GB)
-    else if (length >= 8 && (matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4) || ext === 'mp4' || ext === 'mov')) {
-        let offset = 0;
-        let lastValidBoxEnd = 0;
-
-        while (offset + 8 <= length) {
-            let boxSize = view.getUint32(offset, false); // Big-endian
-            let headerSize = 8;
-
-            if (boxSize === 1) {
-                // Suporte a Extended Size (64-bit)
-                if (offset + 16 > length) break;
-                const bigSize = view.getBigUint64(offset + 8, false);
-                boxSize = Number(bigSize);
-                headerSize = 16;
-            } else if (boxSize === 0) {
-                lastValidBoxEnd = length;
-                break;
+                if (offset + 3 < length && marker !== 0xD8 && marker !== 0xD9) {
+                    const segLength = view.getUint16(offset + 2, false);
+                    offset += 2 + segLength;
+                } else {
+                    offset += 2;
+                }
             }
-
-            if (boxSize < headerSize || offset + boxSize > length) break;
-            offset += boxSize;
-            lastValidBoxEnd = offset;
         }
-        if (lastValidBoxEnd > 0) return { eof: lastValidBoxEnd, format: 'MP4 / ISOBMFF' };
+
+        // 3. BMP
+        else if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4D) {
+            const size = view.getUint32(2, true);
+            if (size <= length && size > 0) return { eof: size, format: 'BMP' };
+        }
+
+        // 4. RIFF Container (AVI / WAV)
+        else if (matchSignature(view, SIGNATURES.AVI_HEADER)) {
+            const riffSize = view.getUint32(4, true);
+            const totalRiff = riffSize + 8;
+            if (totalRiff <= length) return { eof: totalRiff, format: ext.toUpperCase() || 'RIFF Media' };
+        }
+
+        // 5. ISOBMFF / MP4
+        else if (length >= 8 && (matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4) || ext === 'mp4' || ext === 'mov')) {
+            let offset = 0;
+            let lastValidBoxEnd = 0;
+
+            while (offset + 8 <= length) {
+                let boxSize = view.getUint32(offset, false);
+                let headerSize = 8;
+
+                if (boxSize === 1) {
+                    if (offset + 16 > length) break;
+                    const bigSize = view.getBigUint64(offset + 8, false);
+                    boxSize = Number(bigSize);
+                    headerSize = 16;
+                } else if (boxSize === 0) {
+                    lastValidBoxEnd = length;
+                    break;
+                }
+
+                if (boxSize < headerSize || offset + boxSize > length) break;
+                offset += boxSize;
+                lastValidBoxEnd = offset;
+            }
+            if (lastValidBoxEnd > 0) return { eof: lastValidBoxEnd, format: 'MP4 / ISOBMFF' };
+        }
+    } catch (err) {
+        // Retorno seguro caso a mídia possua cabeçalho malformado
+        return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
     }
 
     return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };

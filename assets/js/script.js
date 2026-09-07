@@ -12,16 +12,14 @@ if (self !== top) {
     }
 }
 
-// Instanciação do Worker
-const forensicWorker = new Worker('worker.js');
+// Instanciação segura do Worker utilizando URL relativa ao módulo atual
+const forensicWorker = new Worker(new URL('worker.js', document.baseURI));
 
-const state = {
-    detectFile: null,
-    joinImgFile: null,
-    joinSecretFile: null,
-    extractFile: null,
-    extractedData: { cleanImgBlob: null, payloadBlob: null, payloadExt: 'bin' },
-    activePreviewUrl: null
+// Captura de falhas/erros não tratados no Worker
+forensicWorker.onerror = function (error) {
+    console.error("Erro interno no Worker Forense:", error.message, error);
+    setBanner('detectStatusBanner', 'warning', 'Erro no Processamento', 'Ocorreu uma falha ao analisar a estrutura interna do arquivo.');
+    document.getElementById('detectResult').classList.remove('hidden');
 };
 
 document.addEventListener('DOMContentLoaded', () => {
