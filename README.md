@@ -32,44 +32,53 @@ A **Esteganografia** (do grego _steganos_, "oculto", e _graphia_, "escrita") é 
 
 Diferente da **Criptografia** — que transforma uma mensagem em um texto indecifrável chamando a atenção de observadores —, a **Esteganografia** esconde a _existência_ da própria mensagem.
 
-### 📌 Técnica Utilizada: Concatenação EOF (End of File)
+---
 
-Os leitores e visualizadores de imagens interpretam o arquivo lendo os bytes do cabeçalho (_Header_) até encontrarem a estrutura binária que indica o fim do arquivo (_EOF - End of File_).
+### 📌 Técnica Utilizada: Concatenação EOF (End of File) / Overlay Data
 
-A **Steganography Suite** explora essa característica injetando arquivos adicionais (como arquivos `.zip`, `.pdf`, `.txt`) **após** o marcador final da imagem. Visualizadores normais exibem a imagem perfeitamente ignorando os bytes sobressalentes, enquanto nossa ferramenta é capaz de identificar, isolar e extrair o conteúdo oculto.
+Os reprodutores e visualizadores de mídia interpretam um arquivo lendo os bytes a partir do cabeçalho (_Header_) até identificarem a estrutura binária que marca o fim do contêiner (_EOF - End of File_ ou o fim das _chunks/atoms_ estruturais).
+
+A **Steganography Suite** analisa e explora essa característica ao injetar payloads (como arquivos `.zip`, `.rar`, `.pdf`, `.exe`) **após** o marcador final da mídia. Visualizadores convencionais exibem a imagem ou reproduzem o vídeo normalmente ignorando os bytes sobressalentes, enquanto nossa ferramenta é capaz de analisar a estrutura, identificar anomalias, isolar e extrair o conteúdo oculto com precisão forense.
 
 ---
 
 ## 🚀 Funcionalidades Principais
 
-- **🔍 1. Análise Forense & Detecção:**
-  - Leitura dos _Magic Bytes_ (assinaturas hexadecimais) dos formatos PNG, JPEG, GIF e BMP.
-  - Cálculo dinâmico do tamanho estrutural esperado da imagem vs. tamanho real do arquivo.
-  - Alertas visuais de anomalias e exibição do tipo do payload oculto (ZIP, RAR, PDF, 7z).
-  - Inspecionador embutido em Hexadecimal (_Hex Dump_) no ponto de transição EOF.
+🔍 1. Análise Forense & Detecção (Off-Thread Engine):
+    - **Varredura Assíncrona via Web Worker:** Processamento binário em thread secundária (`worker.js`), garantindo interface 100% responsiva mesmo em arquivos grandes (>100MB).
+    - **Inspeção Ampla de Assinaturas (Magic Bytes):** Identificação e parsing estrutural de formatos **PNG, JPEG, GIF, BMP, RIFF (AVI/WAV) e MP4/ISOBMFF** (suporte a ponteiros 64-bit via `BigInt`/`DataView`).
+    - **Detecção de Anomalias no EOF:** Cálculo dinâmico do tamanho estrutural esperado da mídia versus tamanho real do arquivo para identificação exata de concatenações atípicas.
+    - **Identificação Automática do Payload:** Reconhecimento de assinaturas embutidas como **ZIP, RAR, 7z, PDF, Executáveis (PE/ELF)** logo após o EOF da mídia.
+    - **Inspecionador Hexadecimal Embutido:** Exibição do *Hex Dump* formatado (Endereço, Hex, ASCII) diretamente no ponto de transição e início do arquivo.
 
-- **🛠️ 2. Juntar (Ocultar Payload):**
-  - Concatena arquivos ocultos em imagens de capa diretamente na memória local via `Uint8Array`.
-  - Zero dependências de terminal ou comandos como `copy /b` ou `cat`.
+🛠️ 2. Juntar (Ocultar Payload):
+    - **Injeção em Memória Local:** Concatenação de arquivos ocultos à imagem de capa diretamente via `Uint8Array` no navegador.
+    - **Zero Dependências:** Operação 100% client-side, sem necessidade de comandos de terminal (como `copy /b` ou `cat`) ou servidores externos.
 
-- **🔓 3. Extrair (Separador Automático):**
-  - Localiza a assinatura $EOF$ precisa e divide o arquivo em dois objetos isolados.
-  - Permite o download individual da **Imagem Limpa** (sem os dados extras) e do **Payload Oculto** (com a extensão identificada automaticamente).
+🔓 3. Extrair (Separador Automático):
+    - **Isolamento de Objetos:** Localização precisa do marcador EOF do container original e divisão do arquivo em dois elementos totalmente isolados.
+    - **Download Seguro:** Permite baixar separadamente a **Imagem Limpa** (com metadados/EOF restaurados e sem payload) e o **Payload Oculto** (com a extensão de arquivo identificada automaticamente).
+
+🛡️ 4. Arquitetura de Segurança & Compliance:
+    - **Proteção Anticlone e Clickjacking:** Mecanismo defensivo de *Frame Busting* para mitigar o enquadramento em `iframe` em hospedagens estáticas (GitHub Pages).
+    - **Content Security Policy (CSP):** Configurações rígidas de política de conteúdo autorizando unicamente scripts da própria origem e suporte seguro a `worker-src` e recursos Blob.
+    - **Sanitização de Eventos:** Tratamento estrito de mensagens e validação de `origin` em conformidade com as regras de análise estática do CodeQL.
 
 ---
 
 ## 🔒 Arquitetura de Segurança e Boas Práticas
 
-A aplicação foi desenvolvida sob o conceito de **Defesa em Profundidade (Defense in Depth)**:
+A aplicação foi desenvolvida sob o conceito de **Defesa em Profundidade (Defense in Depth)**, priorizando execução segura e isolada *client-side*:
 
-- **Frontend:** HTML5, Pure CSS3 (Dark Theme) e Vanilla JavaScript (ES6+ sem dependências de runtime).
-- **Content Security Policy (CSP) Rígida:** Proteção robusta contra ataques XSS (_Cross-Site Scripting_) e injeções de scripts externos.
-- **Privacidade Absoluta:** Manipulação de buffers via `ArrayBuffer` e `Uint8Array` locais (`window.FileReader`). Nenhum dado trafega na rede.
-- **Gerenciamento & Pacotes:** Node.js & npm (DevDependencies e Scripts de Linting/Auditoria).
-- **Gestão Consciente de Memória:** Limpeza ativa de ponteiros em memória utilizando `URL.revokeObjectURL()` após o processamento de downloads.
-- **Automação & CI/CD:** GitHub Actions & GitHub Dependabot.
-- **Segurança Estática (SAST):** CodeQL, Horusec, Semgrep, ESLint (Flat Config), Stylelint, HTMLHint e TruffleHog (Secret Scanning).
-- **Análise de Dependências & Misconfig (SCA):** OSV-Scanner, Trivy Scan e `npm audit`.
+- **Frontend & Core:** HTML5, CSS3 Puro (Dark Theme) e Vanilla JavaScript (ES6+) sem dependências externas de runtime.
+- **Off-Thread Processing (Web Workers):** Isolamento de rotinas pesadas de parsing em thread secundária (`worker.js`), mantendo a UI totalmente responsiva sem bloquear a thread principal.
+- **Content Security Policy (CSP) Rígida:** Proteção robusta contra ataques XSS (_Cross-Site Scripting_) e injeções de código, com controle estrito para `worker-src 'self' blob:` e restrição de recursos de terceiros.
+- **Proteção Anticlone (Anti-Clickjacking):** Implementação defensiva de *Frame Busting* para evitar o enquadramento não autorizado da ferramenta em `iframe` em plataformas estáticas (GitHub Pages).
+- **Conformidade de Análise Estática (SAST):** Código auditado e higienizado com validação de `origin` em eventos de mensagens inter-processos (`postMessage`), em estrito cumprimento às diretrizes do GitHub CodeQL.
+- **Privacidade & Execução Local:** Manipulação binária direta via `ArrayBuffer`, `DataView` (com parsing BigInt 64-bit) e `Uint8Array`. Zero tráfego de dados na rede — os arquivos nunca saem do seu navegador.
+- **Gestão Consciente de Memória:** Desalocação ativa de ponteiros e liberação de buffers em memória utilizando `URL.revokeObjectURL()` imediatamente após o processamento dos downloads.
+- **Automação & CI/CD:** Workflows automatizados via GitHub Actions e atualizações contínuas de segurança com GitHub Dependabot.
+- **Segurança Estática & DSN (SAST/SCA):** Cobertura contínua com CodeQL, Horusec, Semgrep, ESLint (Flat Config), Stylelint, HTMLHint, TruffleHog, OSV-Scanner, Trivy Scan e `npm audit`.
 
 ---
 
