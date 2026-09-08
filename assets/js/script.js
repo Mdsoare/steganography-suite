@@ -1,16 +1,28 @@
-/**
- * StegoSuite PRO - Script Principal
- */
 'use strict';
 
-if (self !== top) {
-    try {
-        top.location = self.location;
-    } catch {
-        document.body.innerHTML = '<h1>Acesso não permitido em iframes.</h1>';
-    }
-}
+/**
+ * StegoSuite PRO - Módulo Principal Refatorado e Corrigido
+ */
 
+// --- BASE DE DADOS DE ASSINATURAS (MAGIC BYTES) ---
+const SIGNATURES = {
+    PNG_HEADER: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    PNG_END: [0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82],
+    JPEG_HEADER: [0xFF, 0xD8, 0xFF],
+    JPEG_END: [0xFF, 0xD9],
+    GIF_HEADER: [0x47, 0x49, 0x46, 0x38],
+    GIF_END: [0x3B],
+
+    PAYLOADS: [
+        { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar', label: 'Arquivo RAR' },
+        { bytes: [0x50, 0x4B, 0x03, 0x04], ext: 'zip', label: 'Arquivo ZIP' },
+        { bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], ext: '7z', label: 'Arquivo 7-Zip' },
+        { bytes: [0x25, 0x50, 0x44, 0x46], ext: 'pdf', label: 'Documento PDF' },
+        { bytes: [0x4D, 0x5A], ext: 'exe', label: 'Executável Windows (PE)' }
+    ]
+};
+
+// --- ESTADO GLOBAL DA APLICAÇÃO ---
 const state = {
     detectFile: null,
     joinImgFile: null,
@@ -20,128 +32,59 @@ const state = {
     activePreviewUrl: null
 };
 
-const forensicWorker = new Worker('worker.js');
+// Instância segura do Worker com fallback
+let forensicWorker = null;
+try {
+    forensicWorker = new Worker('worker.js');
+} catch (e) {
+    console.warn("Web Worker não pôde ser inicializado diretamente. Utilizando execução na thread principal.", e);
+}
 
+// --- INICIALIZAÇÃO DA APLICAÇÃO ---
 document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
     setupDragAndDrop();
     setupEventListeners();
-    setupWorkerListeners();
+    if (forensicWorker) {
+        setupWorkerListeners();
+    }
 });
 
-// --- COMUNICAÇÃO COM O WEB WORKER ---
+// --- COMUNICAÇÃO COM O WORKER ---
 function setupWorkerListeners() {
-    forensicWorker.onerror = function (error) {
-        console.error("Erro no Worker Forense:", error);
-        setBanner('detectStatusBanner', 'warning', 'Erro de Processamento', 'Falha interna durante a execução da análise forense.');
-    };
-
     forensicWorker.onmessage = function (e) {
-        const { action, eof, format, extraBytes, hiddenType, payloadExt, buffer } = e.data || {};
+        const { action, eof, format, extraBytes, hiddenType, payloadExt } = e.data || {};
 
         if (action === 'ANALYSIS_COMPLETE') {
-            const resultSection = document.getElementById('detectResult');
-            if (resultSection) {
-                resultSection.classList.remove('hidden');
-                resultSection.style.display = 'block';
-            }
-
-            // Atualização segura de Metadados no DOM
-            const metaFormatEl = document.getElementById('detectMetaFormat');
-            const metaExpectedEl = document.getElementById('detectMetaExpected');
-            const metaExtraEl = document.getElementById('detectMetaExtra');
-            const metaTypeEl = document.getElementById('detectMetaType');
-
-            if (metaFormatEl) metaFormatEl.textContent = format || 'Desconhecido';
-            if (metaExpectedEl) metaExpectedEl.textContent = eof !== -1 ? formatBytes(eof) : 'N/A';
-            if (metaExtraEl) metaExtraEl.textContent = formatBytes(extraBytes);
-            if (metaTypeEl) metaTypeEl.textContent = extraBytes > 0 ? `${hiddenType} (.${payloadExt})` : 'Nenhum';
-
-            // Inspeção Hexadecimal da Região de Transição (Ponto do EOF / Início do Payload)
-            const hexViewer = document.getElementById('detectHexViewer');
-            if (hexViewer && buffer) {
-                const sampleView = new DataView(buffer);
-                // Se houver anomalia, foca a inspeção hex em torno do ponto EOF
-                const startDump = (extraBytes > 0 && eof > 64) ? eof - 64 : 0;
-                const endDump = Math.min(buffer.byteLength, startDump + 256);
-                hexViewer.textContent = bytesToHexDump(sampleView, startDump, endDump);
-            }
-
-            // Atualiza o banner de status principal
-            if (extraBytes > 0) {
-                setBanner(
-                    'detectStatusBanner',
-                    'suspicious',
-                    '⚠️ Anomalia / Payload Detectado!',
-                    `Foram identificados ${formatBytes(extraBytes)} de dados anexados após o fim oficial do container (${format}).`
-                );
-            } else {
-                setBanner(
-                    'detectStatusBanner',
-                    'clean',
-                    '✅ Mídia Integra / Limpa',
-                    `Nenhum dado oculto ou anomalia estrutural detectada na mídia (${format}).`
-                );
-            }
+            renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt);
         }
+    };
+
+    forensicWorker.onerror = function (err) {
+        console.error("Erro no Worker:", err);
     };
 }
 
-// --- DETECÇÃO & PROCESSAMENTO ---
-function handleDetectFile(file) {
-    if (!file) return;
-    state.detectFile = file;
-    
-    // Atualiza metadados na interface (Nome e Tamanho)
-    const fileNameEl = document.getElementById('detectFileName');
-    const fileSizeEl = document.getElementById('detectFileSize');
-    if (fileNameEl) fileNameEl.textContent = file.name;
-    if (fileSizeEl) fileSizeEl.textContent = formatBytes(file.size);
+// --- NAVEGAÇÃO POR ABAS ---
+function setupTabs() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
 
-    // Atualiza o preview visual da mídia
-    revokeActivePreview();
-    state.activePreviewUrl = URL.createObjectURL(file);
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.getAttribute('data-tab');
 
-    const container = document.getElementById('mediaPreviewContainer');
-    if (container) {
-        container.textContent = ''; 
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
 
-        if (file.type.startsWith('image/')) {
-            const img = document.createElement('img');
-            img.src = state.activePreviewUrl;
-            img.className = 'preview-thumb';
-            img.alt = 'Preview';
-            container.appendChild(img);
-        } else if (file.type.startsWith('video/')) {
-            const video = document.createElement('video');
-            video.src = state.activePreviewUrl;
-            video.className = 'preview-thumb';
-            video.controls = true;
-            container.appendChild(video);
-        } else {
-            const icon = document.createElement('div');
-            icon.textContent = '📁';
-            icon.style.fontSize = '1.8rem';
-            container.appendChild(icon);
-        }
-    }
-
-    // Leitura e envio por Transferable Objects (Zero-Copy)
-    const reader = new FileReader();
-    reader.onload = function (e) {
-        const buffer = e.target.result;
-
-        // Dispara o Worker transferindo a propriedade do ArrayBuffer (evita travamento de I/O)
-        forensicWorker.postMessage({
-            action: 'ANALYZE_MEDIA',
-            buffer: buffer,
-            fileName: file.name
-        }, [buffer]);
-    };
-    reader.readAsArrayBuffer(file);
+            btn.classList.add('active');
+            const targetEl = document.getElementById(targetTab);
+            if (targetEl) targetEl.classList.add('active');
+        });
+    });
 }
 
-// --- DRAG AND DROP & INPUTS ---
+// --- DRAG & DROP E FILE INPUTS ---
 function setupDragAndDrop() {
     const dropZones = [
         { zone: document.getElementById('detectDropZone'), input: document.getElementById('detectFileInput'), handler: handleDetectFile },
@@ -153,41 +96,147 @@ function setupDragAndDrop() {
     dropZones.forEach(({ zone, input, handler }) => {
         if (!zone || !input) return;
 
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            zone.addEventListener(eventName, preventDefaults, false);
-            document.body.addEventListener(eventName, preventDefaults, false);
+        ['dragenter', 'dragover'].forEach(eName => {
+            zone.addEventListener(eName, (e) => { e.preventDefault(); zone.classList.add('dragover'); });
         });
 
-        ['dragenter', 'dragover'].forEach(eventName => {
-            zone.addEventListener(eventName, () => zone.classList.add('dragover'), false);
-        });
-
-        ['dragleave', 'drop'].forEach(eventName => {
-            zone.addEventListener(eventName, () => zone.classList.remove('dragover'), false);
+        ['dragleave', 'drop'].forEach(eName => {
+            zone.addEventListener(eName, (e) => { e.preventDefault(); zone.classList.remove('dragover'); });
         });
 
         zone.addEventListener('drop', (e) => {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            if (files.length > 0) {
-                input.files = files;
-                handler(files[0]);
+            e.preventDefault();
+            if (e.dataTransfer.files.length > 0) {
+                input.files = e.dataTransfer.files;
+                handler(e.dataTransfer.files[0]);
             }
-        }, false);
+        });
 
         input.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handler(e.target.files[0]);
-            }
+            if (e.target.files.length > 0) handler(e.target.files[0]);
         });
     });
 }
 
-function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
+function setupEventListeners() {
+    const joinBtn = document.getElementById('joinBtn');
+    if (joinBtn) joinBtn.addEventListener('click', executeJoin);
+
+    const btnClean = document.getElementById('btnDownloadCleanImg');
+    if (btnClean) btnClean.addEventListener('click', () => downloadBlob(state.extractedData.cleanImgBlob, 'media_limpa'));
+
+    const btnPayload = document.getElementById('btnDownloadPayload');
+    if (btnPayload) btnPayload.addEventListener('click', () => downloadBlob(state.extractedData.payloadBlob, `payload_extraido.${state.extractedData.payloadExt}`));
+
+    const btnResetDetect = document.getElementById('btnResetDetect');
+    if (btnResetDetect) btnResetDetect.addEventListener('click', resetDetectTab);
+
+    const btnResetJoin = document.getElementById('btnResetJoin');
+    if (btnResetJoin) btnResetJoin.addEventListener('click', resetJoinTab);
+
+    const btnResetExtract = document.getElementById('btnResetExtract');
+    if (btnResetExtract) btnResetExtract.addEventListener('click', resetExtractTab);
 }
 
+// --- MÓDULO 1: ANÁLISE E DETECÇÃO ---
+function handleDetectFile(file) {
+    if (!file) return;
+    state.detectFile = file;
+
+    const fileNameEl = document.getElementById('detectFileName');
+    const fileSizeEl = document.getElementById('detectFileSize');
+    if (fileNameEl) fileNameEl.textContent = file.name;
+    if (fileSizeEl) fileSizeEl.textContent = formatBytes(file.size);
+
+    // Renderização compatível com a estrutura de preview atual (DIV container)
+    updateMediaPreview(file);
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const buffer = e.target.result;
+
+        if (forensicWorker) {
+            // Execução via Web Worker se disponível
+            forensicWorker.postMessage({
+                action: 'ANALYZE_MEDIA',
+                buffer: buffer,
+                fileName: file.name
+            }, [buffer]);
+        } else {
+            // Processamento Local (Thread Principal) se o Worker falhar
+            const bytes = new Uint8Array(buffer);
+            const { eof, format } = findImageEOF(bytes);
+            const extraBytes = (eof !== -1 && bytes.length > eof) ? bytes.length - eof : 0;
+
+            let hiddenType = 'Nenhum';
+            let payloadExt = 'bin';
+
+            if (extraBytes > 0) {
+                hiddenType = 'Dados Genéricos';
+                for (const item of SIGNATURES.PAYLOADS) {
+                    if (matchSignature(bytes, item.bytes, eof)) {
+                        hiddenType = item.label;
+                        payloadExt = item.ext;
+                        break;
+                    }
+                }
+            }
+
+            renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt, bytes);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt, bytes = null) {
+    const resultSection = document.getElementById('detectResult');
+    if (resultSection) {
+        resultSection.classList.remove('hidden');
+        resultSection.style.display = 'block';
+    }
+
+    const formatEl = document.getElementById('detectMetaFormat');
+    const expectedEl = document.getElementById('detectMetaExpected');
+    const extraEl = document.getElementById('detectMetaExtra');
+    const typeEl = document.getElementById('detectMetaType');
+
+    if (formatEl) formatEl.textContent = format;
+    if (expectedEl) expectedEl.textContent = eof !== -1 ? formatBytes(eof) : 'N/A';
+    if (extraEl) extraEl.textContent = formatBytes(extraBytes);
+    if (typeEl) typeEl.textContent = extraBytes > 0 ? `${hiddenType} (.${payloadExt})` : 'Nenhum';
+
+    if (extraBytes > 0) {
+        setBanner('detectStatusBanner', 'suspicious', '⚠️ Dados Ocultos Encontrados!', `Detectados ${formatBytes(extraBytes)} de dados concatenados após o fim oficial do arquivo.`);
+    } else {
+        setBanner('detectStatusBanner', 'clean', '✅ Mídia Limpa', 'Nenhuma anomalia de concatenação detectada.');
+    }
+}
+
+function updateMediaPreview(file) {
+    if (state.activePreviewUrl) {
+        URL.revokeObjectURL(state.activePreviewUrl);
+    }
+    state.activePreviewUrl = URL.createObjectURL(file);
+
+    const container = document.getElementById('mediaPreviewContainer');
+    if (container) {
+        container.textContent = '';
+        if (file.type.startsWith('image/')) {
+            const img = document.createElement('img');
+            img.src = state.activePreviewUrl;
+            img.className = 'preview-thumb';
+            img.alt = 'Preview';
+            container.appendChild(img);
+        } else {
+            const icon = document.createElement('div');
+            icon.textContent = '📁';
+            icon.style.fontSize = '2rem';
+            container.appendChild(icon);
+        }
+    }
+}
+
+// --- MÓDULO 2: JUNTAR (CONCATENAR) ---
 function handleJoinImgFile(file) {
     state.joinImgFile = file;
     const nameEl = document.getElementById('joinImgName');
@@ -207,309 +256,160 @@ function checkJoinReady() {
     if (btn) btn.disabled = !(state.joinImgFile && state.joinSecretFile);
 }
 
-// --- EXTRAÇÃO DE PAYLOAD ---
+async function executeJoin() {
+    if (!state.joinImgFile || !state.joinSecretFile) return;
+
+    const imgBuf = await state.joinImgFile.arrayBuffer();
+    const secretBuf = await state.joinSecretFile.arrayBuffer();
+
+    const combined = new Uint8Array(imgBuf.byteLength + secretBuf.byteLength);
+    combined.set(new Uint8Array(imgBuf), 0);
+    combined.set(new Uint8Array(secretBuf), imgBuf.byteLength);
+
+    const blob = new Blob([combined], { type: state.joinImgFile.type || 'application/octet-stream' });
+    downloadBlob(blob, `stego_${state.joinImgFile.name}`);
+
+    const banner = document.getElementById('joinStatusBanner');
+    if (banner) {
+        banner.classList.remove('hidden');
+        banner.style.display = 'block';
+    }
+}
+
+// --- MÓDULO 3: EXTRAIR ---
 function handleExtractFile(file) {
     state.extractFile = file;
-    
     const reader = new FileReader();
-    reader.onload = function (e) {
-        const buffer = e.target.result;
-        const view = new DataView(buffer);
-        
-        const eofInfo = findEofUniversal(view, file.name);
 
-        const resultSection = document.getElementById('extractResult');
-        if (resultSection) {
-            resultSection.classList.remove('hidden');
-            resultSection.style.display = 'block';
+    reader.onload = function (e) {
+        const bytes = new Uint8Array(e.target.result);
+        const { eof } = findImageEOF(bytes);
+        const extractResult = document.getElementById('extractResult');
+
+        if (extractResult) {
+            extractResult.classList.remove('hidden');
+            extractResult.style.display = 'block';
         }
 
         const btnClean = document.getElementById('btnDownloadCleanImg');
         const btnPayload = document.getElementById('btnDownloadPayload');
 
-        if (eofInfo.eof === -1 || buffer.byteLength <= eofInfo.eof) {
-            setBanner('extractStatusBanner', 'warning', 'Nenhum Payload Encontrado', 'A mídia selecionada não possui dados concatenados anexados.');
+        if (eof === -1 || eof >= bytes.length) {
+            setBanner('extractStatusBanner', 'warning', 'Sem Dados Ocultos', 'Esta imagem não contém conteúdo extra para ser extraído.');
             if (btnClean) btnClean.style.display = 'none';
             if (btnPayload) btnPayload.style.display = 'none';
             return;
         }
 
-        const cleanBuffer = buffer.slice(0, eofInfo.eof);
-        const payloadBuffer = buffer.slice(eofInfo.eof);
+        const cleanImgBytes = bytes.slice(0, eof);
+        const payloadBytes = bytes.slice(eof);
 
-        // Identifica extensão do payload extraído
-        const payloadView = new DataView(payloadBuffer);
-        const detectedExt = detectPayloadExtension(payloadView);
+        let ext = 'bin';
+        for (const item of SIGNATURES.PAYLOADS) {
+            if (matchSignature(payloadBytes, item.bytes, 0)) {
+                ext = item.ext;
+                break;
+            }
+        }
 
-        state.extractedData.cleanImgBlob = new Blob([cleanBuffer], { type: file.type || 'application/octet-stream' });
-        state.extractedData.payloadBlob = new Blob([payloadBuffer], { type: 'application/octet-stream' });
-        state.extractedData.payloadExt = detectedExt;
+        state.extractedData.cleanImgBlob = new Blob([cleanImgBytes], { type: file.type || 'application/octet-stream' });
+        state.extractedData.payloadBlob = new Blob([payloadBytes], { type: 'application/octet-stream' });
+        state.extractedData.payloadExt = ext;
 
-        setBanner('extractStatusBanner', 'suspicious', 'Payload Oculto Extraído!', `Foram isolados ${formatBytes(payloadBuffer.byteLength)} de payload (.${detectedExt}) da mídia original.`);
+        setBanner('extractStatusBanner', 'suspicious', 'Conteúdo Oculto Extraído!', `Foram extraídos ${formatBytes(payloadBytes.length)} de payload concatenado.`);
+
         if (btnClean) btnClean.style.display = 'inline-block';
         if (btnPayload) btnPayload.style.display = 'inline-block';
     };
+
     reader.readAsArrayBuffer(file);
 }
 
-function detectPayloadExtension(view) {
-    if (!view || view.byteLength < 2) return 'bin';
+// --- RESETS E AUXILIARES ---
+function resetDetectTab() {
+    state.detectFile = null;
+    const input = document.getElementById('detectFileInput');
+    if (input) input.value = '';
 
-    let startOffset = 0;
-    while (startOffset < Math.min(view.byteLength - 2, 16)) {
-        const b = view.getUint8(startOffset);
-        if (b !== 0x00 && b !== 0xFF) break;
-        startOffset++;
+    const container = document.getElementById('mediaPreviewContainer');
+    if (container) container.textContent = '';
+
+    if (state.activePreviewUrl) {
+        URL.revokeObjectURL(state.activePreviewUrl);
+        state.activePreviewUrl = null;
     }
 
-    const SIGNATURES = [
-        { bytes: [0x4D, 0x5A], ext: 'exe' },
-        { bytes: [0x50, 0x4B, 0x03, 0x04], ext: 'zip' },
-        { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar' },
-        { bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], ext: '7z' },
-        { bytes: [0x25, 0x50, 0x44, 0x46], ext: 'pdf' },
-        { bytes: [0x7F, 0x45, 0x4C, 0x46], ext: 'elf' },
-        { bytes: [0xFF, 0xD8, 0xFF], ext: 'jpg' },
-        { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png' }
-    ];
-
-    for (const sig of SIGNATURES) {
-        if (view.byteLength - startOffset >= sig.bytes.length) {
-            let match = true;
-            for (let i = 0; i < sig.bytes.length; i++) {
-                if (view.getUint8(startOffset + i) !== sig.bytes[i]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) return sig.ext;
-        }
-    }
-
-    let isText = true;
-    const checkLength = Math.min(view.byteLength - startOffset, 256);
-    for (let i = startOffset; i < startOffset + checkLength; i++) {
-        const byte = view.getUint8(i);
-        if ((byte < 0x09 || byte > 0x0D) && (byte < 0x20 || byte > 0x7E)) {
-            isText = false;
-            break;
-        }
-    }
-    if (isText && checkLength > 0) return 'txt';
-
-    return 'bin';
-}
-
-function setupEventListeners() {
-    const joinBtn = document.getElementById('joinBtn');
-    if (joinBtn) {
-        joinBtn.addEventListener('click', () => {
-            if (!state.joinImgFile || !state.joinSecretFile) return;
-
-            const readerImg = new FileReader();
-            readerImg.onload = function (e1) {
-                const imgBuffer = e1.target.result;
-
-                const readerSecret = new FileReader();
-                readerSecret.onload = function (e2) {
-                    const secretBuffer = e2.target.result;
-
-                    const combined = new Uint8Array(imgBuffer.byteLength + secretBuffer.byteLength);
-                    combined.set(new Uint8Array(imgBuffer), 0);
-                    combined.set(new Uint8Array(secretBuffer), imgBuffer.byteLength);
-
-                    const blob = new Blob([combined], { type: state.joinImgFile.type || 'application/octet-stream' });
-                    downloadBlob(blob, `stego_${state.joinImgFile.name}`);
-
-                    const banner = document.getElementById('joinStatusBanner');
-                    if (banner) {
-                        banner.classList.remove('hidden');
-                        banner.style.display = 'block';
-                    }
-                };
-                readerSecret.readAsArrayBuffer(state.joinSecretFile);
-            };
-            readerImg.readAsArrayBuffer(state.joinImgFile);
-        });
-    }
-
-    const btnClean = document.getElementById('btnDownloadCleanImg');
-    if (btnClean) {
-        btnClean.addEventListener('click', () => {
-            if (state.extractedData.cleanImgBlob && state.extractFile) {
-                downloadBlob(state.extractedData.cleanImgBlob, `clean_${state.extractFile.name}`);
-            }
-        });
-    }
-
-    const btnPayload = document.getElementById('btnDownloadPayload');
-    if (btnPayload) {
-        btnPayload.addEventListener('click', () => {
-            if (state.extractedData.payloadBlob) {
-                const ext = state.extractedData.payloadExt || 'bin';
-                downloadBlob(state.extractedData.payloadBlob, `extracted_payload.${ext}`);
-            }
-        });
-    }
-
-    const btnResetDetect = document.getElementById('btnResetDetect');
-    if (btnResetDetect) {
-        btnResetDetect.addEventListener('click', () => {
-            state.detectFile = null;
-            const input = document.getElementById('detectFileInput');
-            if (input) input.value = '';
-            const res = document.getElementById('detectResult');
-            if (res) {
-                res.classList.add('hidden');
-                res.style.display = 'none';
-            }
-            revokeActivePreview();
-        });
-    }
-
-    const btnResetJoin = document.getElementById('btnResetJoin');
-    if (btnResetJoin) {
-        btnResetJoin.addEventListener('click', () => {
-            state.joinImgFile = null;
-            state.joinSecretFile = null;
-            const input1 = document.getElementById('joinImgInput');
-            const input2 = document.getElementById('joinSecretInput');
-            if (input1) input1.value = '';
-            if (input2) input2.value = '';
-
-            const name1 = document.getElementById('joinImgName');
-            const name2 = document.getElementById('joinSecretName');
-            if (name1) name1.textContent = 'Nenhum arquivo selecionado';
-            if (name2) name2.textContent = 'ZIP, RAR, PDF, TXT, EXE, etc.';
-
-            const btn = document.getElementById('joinBtn');
-            if (btn) btn.disabled = true;
-
-            const banner = document.getElementById('joinStatusBanner');
-            if (banner) {
-                banner.classList.add('hidden');
-                banner.style.display = 'none';
-            }
-        });
-    }
-
-    const btnResetExtract = document.getElementById('btnResetExtract');
-    if (btnResetExtract) {
-        btnResetExtract.addEventListener('click', () => {
-            state.extractFile = null;
-            state.extractedData = { cleanImgBlob: null, payloadBlob: null, payloadExt: 'bin' };
-            const input = document.getElementById('extractFileInput');
-            if (input) input.value = '';
-            const res = document.getElementById('extractResult');
-            if (res) {
-                res.classList.add('hidden');
-                res.style.display = 'none';
-            }
-        });
+    const res = document.getElementById('detectResult');
+    if (res) {
+        res.classList.add('hidden');
+        res.style.display = 'none';
     }
 }
 
-function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 100);
+function resetJoinTab() {
+    state.joinImgFile = null;
+    state.joinSecretFile = null;
+
+    const input1 = document.getElementById('joinImgInput');
+    const input2 = document.getElementById('joinSecretInput');
+    if (input1) input1.value = '';
+    if (input2) input2.value = '';
+
+    const name1 = document.getElementById('joinImgName');
+    const name2 = document.getElementById('joinSecretName');
+    if (name1) name1.textContent = 'Nenhum arquivo selecionado';
+    if (name2) name2.textContent = 'ZIP, RAR, PDF, TXT, etc.';
+
+    const btn = document.getElementById('joinBtn');
+    if (btn) btn.disabled = true;
+
+    const banner = document.getElementById('joinStatusBanner');
+    if (banner) {
+        banner.classList.add('hidden');
+        banner.style.display = 'none';
+    }
 }
 
-function findEofUniversal(view, fileName = '') {
-    const length = view.byteLength;
-    const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
+function resetExtractTab() {
+    state.extractFile = null;
+    state.extractedData = { cleanImgBlob: null, payloadBlob: null, payloadExt: 'bin' };
 
-    if (length >= 8 && (
-        (view.getUint8(4) === 0x66 && view.getUint8(5) === 0x74 && view.getUint8(6) === 0x79 && view.getUint8(7) === 0x70) ||
-        ext === 'avif' || ext === 'heic' || ext === 'mp4'
-    )) {
-        let offset = 0;
-        let lastBox = -1;
+    const input = document.getElementById('extractFileInput');
+    if (input) input.value = '';
 
-        while (offset + 8 <= length) {
-            let boxSize = view.getUint32(offset, false);
-            let headerSize = 8;
-
-            if (boxSize === 1) {
-                if (offset + 16 > length) break;
-                const bigSize = view.getBigUint64(offset + 8, false);
-                boxSize = Number(bigSize);
-                headerSize = 16;
-            } else if (boxSize === 0) {
-                lastBox = length;
-                break;
-            }
-
-            if (boxSize < headerSize || offset + boxSize > length) {
-                break;
-            }
-
-            offset += boxSize;
-            lastBox = offset;
-        }
-
-        if (lastBox > 0) return { eof: lastBox };
+    const res = document.getElementById('extractResult');
+    if (res) {
+        res.classList.add('hidden');
+        res.style.display = 'none';
     }
-
-    for (let i = 0; i < Math.min(length - 8, 64); i++) {
-        if (view.getUint8(i) === 0x89 && view.getUint8(i + 1) === 0x50 && view.getUint8(i + 2) === 0x4E && view.getUint8(i + 3) === 0x47) {
-            let offset = i + 8;
-            while (offset + 12 <= length) {
-                const chunkSize = view.getUint32(offset, false);
-                if (view.getUint8(offset + 4) === 0x49 && view.getUint8(offset + 5) === 0x45 &&
-                    view.getUint8(offset + 6) === 0x4E && view.getUint8(offset + 7) === 0x47) {
-                    return { eof: offset + 12 };
-                }
-                if (chunkSize > length) break;
-                offset += 12 + chunkSize;
-            }
-        }
-    }
-
-    if (length >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xD8) {
-        for (let i = length - 2; i >= 2; i--) {
-            if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
-                return { eof: i + 2 };
-            }
-        }
-    }
-
-    if (length >= 8 && view.getUint8(0) === 0x52 && view.getUint8(1) === 0x49 && view.getUint8(2) === 0x46 && view.getUint8(3) === 0x43) {
-        const riffSize = view.getUint32(4, true);
-        if (riffSize + 8 <= length) return { eof: riffSize + 8 };
-    }
-
-    if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4D) {
-        const size = view.getUint32(2, true);
-        if (size <= length && size > 0) return { eof: size };
-    }
-
-    return { eof: -1 };
 }
 
-function bytesToHexDump(dataView, start, end) {
-    let output = '';
-    let hex = '';
-    let ascii = '';
-
-    for (let i = start; i < end && i < dataView.byteLength; i++) {
-        const byte = dataView.getUint8(i);
-        hex += byte.toString(16).padStart(2, '0').toUpperCase() + ' ';
-        ascii += (byte >= 32 && byte <= 126) ? String.fromCharCode(byte) : '.';
-
-        if ((i - start + 1) % 16 === 0 || i === end - 1 || i === dataView.byteLength - 1) {
-            const addr = i.toString(16).padStart(8, '0').toUpperCase();
-            output += `${addr}  ${hex.padEnd(48, ' ')} |${ascii}|\n`;
-            hex = '';
-            ascii = '';
+function findImageEOF(bytes) {
+    if (matchSignature(bytes, SIGNATURES.PNG_HEADER)) {
+        for (let i = bytes.length - 8; i >= 0; i--) {
+            if (matchSignature(bytes, SIGNATURES.PNG_END, i)) return { eof: i + 8, format: 'PNG' };
         }
+    } else if (matchSignature(bytes, SIGNATURES.JPEG_HEADER)) {
+        for (let i = bytes.length - 2; i >= 0; i--) {
+            if (matchSignature(bytes, SIGNATURES.JPEG_END, i)) return { eof: i + 2, format: 'JPEG' };
+        }
+    } else if (matchSignature(bytes, SIGNATURES.GIF_HEADER)) {
+        for (let i = bytes.length - 1; i >= 0; i--) {
+            if (matchSignature(bytes, SIGNATURES.GIF_END, i)) return { eof: i + 1, format: 'GIF' };
+        }
+    } else if (bytes[0] === 0x42 && bytes[1] === 0x4D) {
+        const size = bytes[2] | (bytes[3] << 8) | (bytes[4] << 16) | (bytes[5] << 24);
+        if (size <= bytes.length) return { eof: size, format: 'BMP' };
     }
-    return output;
+    return { eof: -1, format: 'Desconhecido' };
+}
+
+function matchSignature(array, target, offset = 0) {
+    if (offset + target.length > array.length) return false;
+    for (let i = 0; i < target.length; i++) {
+        if (array[offset + i] !== target[i]) return false;
+    }
+    return true;
 }
 
 function formatBytes(bytes) {
@@ -520,29 +420,6 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-function revokeActivePreview() {
-    if (state.activePreviewUrl) {
-        URL.revokeObjectURL(state.activePreviewUrl);
-        state.activePreviewUrl = null;
-    }
-}
-
-function setupTabs() {
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const targetTab = btn.getAttribute('data-tab');
-            tabBtns.forEach(b => b.classList.remove('active'));
-            tabContents.forEach(c => c.classList.remove('active'));
-            btn.classList.add('active');
-            const targetEl = document.getElementById(targetTab);
-            if (targetEl) targetEl.classList.add('active');
-        });
-    });
-}
-
 function setBanner(id, type, title, desc) {
     const banner = document.getElementById(id);
     if (!banner) return;
@@ -551,4 +428,16 @@ function setBanner(id, type, title, desc) {
     const p = banner.querySelector('p');
     if (h3) h3.textContent = title;
     if (p) p.textContent = desc;
+}
+
+function downloadBlob(blob, filename) {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
 }
