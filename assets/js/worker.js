@@ -138,7 +138,7 @@ function findMediaEOF(buffer, fileName = '') {
             if (size <= length && size > 0) return { eof: size, format: 'BMP' };
         }
 
-    } catch (e) {
+    } catch {
         return { eof: -1, format: ext ? ext.toUpperCase() : 'Erro no Parsing' };
     }
 
@@ -176,7 +176,7 @@ self.onmessage = function (e) {
                 hiddenType, 
                 payloadExt 
             });
-        } catch (err) {
+        } catch {
             self.postMessage({ 
                 action: 'ANALYSIS_COMPLETE', 
                 eof: -1, 

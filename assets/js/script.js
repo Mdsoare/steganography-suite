@@ -448,7 +448,7 @@ function findEofUniversal(view, fileName = '') {
         if (riffSize + 8 <= length) return { eof: riffSize + 8 };
     }
 
-    if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4M) {
+    if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4D) {
         const size = view.getUint32(2, true);
         if (size <= length && size > 0) return { eof: size };
     }
