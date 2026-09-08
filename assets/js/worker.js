@@ -174,8 +174,9 @@ self.onmessage = function (e) {
                 format, 
                 extraBytes, 
                 hiddenType, 
-                payloadExt 
-            });
+                payloadExt,
+                buffer
+            }, [buffer]);
         } catch {
             self.postMessage({ 
                 action: 'ANALYSIS_COMPLETE', 

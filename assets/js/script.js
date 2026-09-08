@@ -37,7 +37,7 @@ function setupWorkerListeners() {
     };
 
     forensicWorker.onmessage = function (e) {
-        const { action, eof, format, extraBytes, hiddenType, payloadExt } = e.data || {};
+        const { action, eof, format, extraBytes, hiddenType, payloadExt, buffer } = e.data || {};
 
         if (action === 'ANALYSIS_COMPLETE') {
             const resultSection = document.getElementById('detectResult');
@@ -46,7 +46,7 @@ function setupWorkerListeners() {
                 resultSection.style.display = 'block';
             }
 
-            // Atualiza os elementos da interface DOM sem destruir a estrutura HTML
+            // Atualização segura de Metadados no DOM
             const metaFormatEl = document.getElementById('detectMetaFormat');
             const metaExpectedEl = document.getElementById('detectMetaExpected');
             const metaExtraEl = document.getElementById('detectMetaExtra');
@@ -56,6 +56,16 @@ function setupWorkerListeners() {
             if (metaExpectedEl) metaExpectedEl.textContent = eof !== -1 ? formatBytes(eof) : 'N/A';
             if (metaExtraEl) metaExtraEl.textContent = formatBytes(extraBytes);
             if (metaTypeEl) metaTypeEl.textContent = extraBytes > 0 ? `${hiddenType} (.${payloadExt})` : 'Nenhum';
+
+            // Inspeção Hexadecimal da Região de Transição (Ponto do EOF / Início do Payload)
+            const hexViewer = document.getElementById('detectHexViewer');
+            if (hexViewer && buffer) {
+                const sampleView = new DataView(buffer);
+                // Se houver anomalia, foca a inspeção hex em torno do ponto EOF
+                const startDump = (extraBytes > 0 && eof > 64) ? eof - 64 : 0;
+                const endDump = Math.min(buffer.byteLength, startDump + 256);
+                hexViewer.textContent = bytesToHexDump(sampleView, startDump, endDump);
+            }
 
             // Atualiza o banner de status principal
             if (extraBytes > 0) {
@@ -116,19 +126,12 @@ function handleDetectFile(file) {
         }
     }
 
-    // Leitura e envio para o Worker usando Transferable Objects
+    // Leitura e envio por Transferable Objects (Zero-Copy)
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
-        
-        // Renderiza a Amostra Hex se o elemento existir na tela
-        const hexViewer = document.getElementById('detectHexViewer');
-        if (hexViewer) {
-            const sampleView = new DataView(buffer);
-            hexViewer.textContent = bytesToHexDump(sampleView, 0, Math.min(buffer.byteLength, 256));
-        }
 
-        // Dispara o Worker de forma performática via transferência de ownership
+        // Dispara o Worker transferindo a propriedade do ArrayBuffer (evita travamento de I/O)
         forensicWorker.postMessage({
             action: 'ANALYZE_MEDIA',
             buffer: buffer,
@@ -187,15 +190,15 @@ function preventDefaults(e) {
 
 function handleJoinImgFile(file) {
     state.joinImgFile = file;
-    const el = document.getElementById('joinImgName');
-    if (el) el.textContent = `${file.name} (${formatBytes(file.size)})`;
+    const nameEl = document.getElementById('joinImgName');
+    if (nameEl) nameEl.textContent = `${file.name} (${formatBytes(file.size)})`;
     checkJoinReady();
 }
 
 function handleJoinSecretFile(file) {
     state.joinSecretFile = file;
-    const el = document.getElementById('joinSecretName');
-    if (el) el.textContent = `${file.name} (${formatBytes(file.size)})`;
+    const nameEl = document.getElementById('joinSecretName');
+    if (nameEl) nameEl.textContent = `${file.name} (${formatBytes(file.size)})`;
     checkJoinReady();
 }
 
@@ -221,10 +224,11 @@ function handleExtractFile(file) {
             resultSection.style.display = 'block';
         }
 
+        const btnClean = document.getElementById('btnDownloadCleanImg');
+        const btnPayload = document.getElementById('btnDownloadPayload');
+
         if (eofInfo.eof === -1 || buffer.byteLength <= eofInfo.eof) {
             setBanner('extractStatusBanner', 'warning', 'Nenhum Payload Encontrado', 'A mídia selecionada não possui dados concatenados anexados.');
-            const btnClean = document.getElementById('btnDownloadCleanImg');
-            const btnPayload = document.getElementById('btnDownloadPayload');
             if (btnClean) btnClean.style.display = 'none';
             if (btnPayload) btnPayload.style.display = 'none';
             return;
@@ -242,9 +246,6 @@ function handleExtractFile(file) {
         state.extractedData.payloadExt = detectedExt;
 
         setBanner('extractStatusBanner', 'suspicious', 'Payload Oculto Extraído!', `Foram isolados ${formatBytes(payloadBuffer.byteLength)} de payload (.${detectedExt}) da mídia original.`);
-        
-        const btnClean = document.getElementById('btnDownloadCleanImg');
-        const btnPayload = document.getElementById('btnDownloadPayload');
         if (btnClean) btnClean.style.display = 'inline-block';
         if (btnPayload) btnPayload.style.display = 'inline-block';
     };
@@ -375,15 +376,15 @@ function setupEventListeners() {
             const input2 = document.getElementById('joinSecretInput');
             if (input1) input1.value = '';
             if (input2) input2.value = '';
-            
+
             const name1 = document.getElementById('joinImgName');
             const name2 = document.getElementById('joinSecretName');
             if (name1) name1.textContent = 'Nenhum arquivo selecionado';
             if (name2) name2.textContent = 'ZIP, RAR, PDF, TXT, EXE, etc.';
-            
+
             const btn = document.getElementById('joinBtn');
             if (btn) btn.disabled = true;
-            
+
             const banner = document.getElementById('joinStatusBanner');
             if (banner) {
                 banner.classList.add('hidden');
