@@ -32,12 +32,24 @@ const state = {
     activePreviewUrl: null
 };
 
-// Instância segura do Worker com fallback
+// --- INICIALIZAÇÃO SEGURA DO WORKER E CORREÇÃO DE ROTA (GITHUB PAGES) ---
 let forensicWorker = null;
+let workerFailed = false;
+
 try {
-    forensicWorker = new Worker('worker.js');
+    // Localiza dinamicamente o script em execução atual
+    const currentScript = document.currentScript || (function() {
+        const scripts = document.getElementsByTagName('script');
+        return scripts[scripts.length - 1];
+    })();
+    
+    // Resolve o caminho dois níveis acima (de assets/js/script.js para a raiz /worker.js)
+    // Isso blinda a aplicação contra rotas relativas defeituosas no GitHub Pages
+    const rootUrl = new URL('../../worker.js', currentScript.src).href;
+    forensicWorker = new Worker(rootUrl);
 } catch (e) {
-    console.warn("Web Worker não pôde ser inicializado diretamente. Utilizando execução na thread principal.", e);
+    console.warn("Web Worker bloqueado sincronicamente (Possível CSP ou erro de origem). Utilizando thread principal.", e);
+    workerFailed = true;
 }
 
 // --- INICIALIZAÇÃO DA APLICAÇÃO ---
@@ -53,15 +65,19 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- COMUNICAÇÃO COM O WORKER ---
 function setupWorkerListeners() {
     forensicWorker.onmessage = function (e) {
-        const { action, eof, format, extraBytes, hiddenType, payloadExt } = e.data || {};
+        const { action, eof, format, extraBytes, hiddenType, payloadExt, buffer } = e.data || {};
 
         if (action === 'ANALYSIS_COMPLETE') {
-            renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt);
+            // Reconstrói o Uint8Array a partir do ArrayBuffer devolvido/transferido
+            const bytes = buffer ? new Uint8Array(buffer) : null;
+            renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt, bytes);
         }
     };
 
     forensicWorker.onerror = function (err) {
-        console.error("Erro no Worker:", err);
+        // Captura o erro assíncrono (404 Not Found do GitHub Pages)
+        console.warn("Erro no Worker detectado (possível 404). Desativando e forçando fallback local.", err);
+        workerFailed = true;
     };
 }
 
@@ -148,44 +164,51 @@ function handleDetectFile(file) {
     if (fileNameEl) fileNameEl.textContent = file.name;
     if (fileSizeEl) fileSizeEl.textContent = formatBytes(file.size);
 
-    // Renderização compatível com a estrutura de preview atual (DIV container)
     updateMediaPreview(file);
 
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
 
-        if (forensicWorker) {
-            // Execução via Web Worker se disponível
-            forensicWorker.postMessage({
-                action: 'ANALYZE_MEDIA',
-                buffer: buffer,
-                fileName: file.name
-            }, [buffer]);
-        } else {
-            // Processamento Local (Thread Principal) se o Worker falhar
-            const bytes = new Uint8Array(buffer);
-            const { eof, format } = findImageEOF(bytes);
-            const extraBytes = (eof !== -1 && bytes.length > eof) ? bytes.length - eof : 0;
-
-            let hiddenType = 'Nenhum';
-            let payloadExt = 'bin';
-
-            if (extraBytes > 0) {
-                hiddenType = 'Dados Genéricos';
-                for (const item of SIGNATURES.PAYLOADS) {
-                    if (matchSignature(bytes, item.bytes, eof)) {
-                        hiddenType = item.label;
-                        payloadExt = item.ext;
-                        break;
-                    }
-                }
+        // Verifica falha dinâmica do worker
+        if (forensicWorker && !workerFailed) {
+            try {
+                forensicWorker.postMessage({
+                    action: 'ANALYZE_MEDIA',
+                    buffer: buffer,
+                    fileName: file.name
+                }, [buffer]);
+            } catch (err) {
+                console.warn("Falha ao delegar buffer ao Worker. Executando processamento local.", err);
+                runLocalAnalysis(e.target.result); // Usa event target em caso de falha de transferência
             }
-
-            renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt, bytes);
+        } else {
+            runLocalAnalysis(buffer);
         }
     };
     reader.readAsArrayBuffer(file);
+}
+
+function runLocalAnalysis(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const { eof, format } = findImageEOF(bytes);
+    const extraBytes = (eof !== -1 && bytes.length > eof) ? bytes.length - eof : 0;
+
+    let hiddenType = 'Nenhum';
+    let payloadExt = 'bin';
+
+    if (extraBytes > 0) {
+        hiddenType = 'Dados Genéricos';
+        for (const item of SIGNATURES.PAYLOADS) {
+            if (matchSignature(bytes, item.bytes, eof)) {
+                hiddenType = item.label;
+                payloadExt = item.ext;
+                break;
+            }
+        }
+    }
+
+    renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt, bytes);
 }
 
 function renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt, bytes = null) {
@@ -199,6 +222,7 @@ function renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt,
     const expectedEl = document.getElementById('detectMetaExpected');
     const extraEl = document.getElementById('detectMetaExtra');
     const typeEl = document.getElementById('detectMetaType');
+    const hexViewer = document.getElementById('detectHexViewer');
 
     if (formatEl) formatEl.textContent = format;
     if (expectedEl) expectedEl.textContent = eof !== -1 ? formatBytes(eof) : 'N/A';
@@ -207,8 +231,49 @@ function renderDetectionResults(eof, format, extraBytes, hiddenType, payloadExt,
 
     if (extraBytes > 0) {
         setBanner('detectStatusBanner', 'suspicious', '⚠️ Dados Ocultos Encontrados!', `Detectados ${formatBytes(extraBytes)} de dados concatenados após o fim oficial do arquivo.`);
+        
+        // Renderização Forense Hexadecimal (Limitado aos primeiros 256 bytes anômalos)
+        if (bytes && hexViewer) {
+            const maxBytes = Math.min(extraBytes, 256);
+            const payloadBytes = bytes.slice(eof, eof + maxBytes);
+            
+            let hexString = '';
+            let asciiString = '';
+            
+            for (let i = 0; i < payloadBytes.length; i++) {
+                if (i % 16 === 0) {
+                    if (i > 0) hexString += `  |${asciiString}|\n`;
+                    asciiString = '';
+                    const offset = (eof + i).toString(16).padStart(8, '0').toUpperCase();
+                    hexString += `${offset}  `;
+                }
+                
+                const byte = payloadBytes[i];
+                hexString += byte.toString(16).padStart(2, '0').toUpperCase() + ' ';
+                
+                asciiString += (byte >= 32 && byte <= 126) ? String.fromCharCode(byte) : '.';
+            }
+            
+            const remainder = payloadBytes.length % 16;
+            if (remainder !== 0) {
+                const padding = (16 - remainder) * 3;
+                hexString += ' '.repeat(padding) + `  |${asciiString}|`;
+            } else if (payloadBytes.length > 0) {
+                hexString += `  |${asciiString}|`;
+            }
+            
+            if (extraBytes > 256) {
+                hexString += '\n\n... [Dump truncado (restam ' + formatBytes(extraBytes - 256) + ')]';
+            }
+            
+            hexViewer.textContent = hexString;
+        } else if (hexViewer) {
+            hexViewer.textContent = "Buffer inacessível para renderização hexadecimal.";
+        }
+
     } else {
         setBanner('detectStatusBanner', 'clean', '✅ Mídia Limpa', 'Nenhuma anomalia de concatenação detectada.');
+        if (hexViewer) hexViewer.textContent = "-";
     }
 }
 
