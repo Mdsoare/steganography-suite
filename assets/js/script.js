@@ -3,7 +3,6 @@
  */
 'use strict';
 
-// Proteção básica de Frame Busting
 if (self !== top) {
     try {
         top.location = self.location;
@@ -12,7 +11,6 @@ if (self !== top) {
     }
 }
 
-// Declaração do Estado Global
 const state = {
     detectFile: null,
     joinImgFile: null,
@@ -22,14 +20,11 @@ const state = {
     activePreviewUrl: null
 };
 
-// Instanciação segura do Worker utilizando URL relativa ao módulo atual
-const forensicWorker = new Worker(new URL('worker.js', document.baseURI));
+// Certifique-se de usar o caminho relativo correto até o worker.js
+const forensicWorker = new Worker('worker.js');
 
-// Captura de falhas/erros não tratados no Worker
 forensicWorker.onerror = function (error) {
-    console.error("Erro interno no Worker Forense:", error.message, error);
-    setBanner('detectStatusBanner', 'warning', 'Erro no Processamento', 'Ocorreu uma falha ao analisar a estrutura interna do arquivo.');
-    document.getElementById('detectResult').classList.remove('hidden');
+    console.error("Erro no Worker Forense:", error);
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -42,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- COMUNICAÇÃO COM O WEB WORKER ---
 function setupWorkerListeners() {
     forensicWorker.onmessage = function (e) {
-        const { action, eof, format, extraBytes, hiddenType } = e.data;
+        const { action, eof, format, extraBytes, hiddenType } = e.data || {};
 
         if (action === 'ANALYSIS_COMPLETE') {
             const resultSection = document.getElementById('detectResult');
@@ -167,7 +162,6 @@ function preventDefaults(e) {
     e.stopPropagation();
 }
 
-// --- HANDLERS DAS ABAS JUNTAR E EXTRAIR ---
 function handleJoinImgFile(file) {
     state.joinImgFile = file;
     document.getElementById('joinImgName').textContent = `${file.name} (${formatBytes(file.size)})`;
@@ -191,7 +185,6 @@ function handleExtractFile(file) {
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
-        
         const view = new DataView(buffer);
         const eofInfo = findEofLocally(view);
 
@@ -218,7 +211,6 @@ function handleExtractFile(file) {
     reader.readAsArrayBuffer(file);
 }
 
-// --- CONFIGURAÇÃO DE EVENTOS DE BOTÕES ---
 function setupEventListeners() {
     document.getElementById('joinBtn').addEventListener('click', () => {
         if (!state.joinImgFile || !state.joinSecretFile) return;
@@ -283,7 +275,6 @@ function setupEventListeners() {
     });
 }
 
-// --- FUNÇÕES UTILITÁRIAS ---
 function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
