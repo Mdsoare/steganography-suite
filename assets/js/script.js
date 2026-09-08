@@ -42,22 +42,36 @@ function setupWorkerListeners() {
         if (action === 'ANALYSIS_COMPLETE') {
             const resultSection = document.getElementById('detectResult');
             if (resultSection) {
-                // Garante a exibição do painel
                 resultSection.classList.remove('hidden');
-                resultSection.style.setProperty('display', 'block', 'important');
+                resultSection.style.display = 'block';
+            }
 
-                // Renderiza o relatório de análise diretamente na tela
-                resultSection.innerHTML = `
-                    <div style="margin-top: 20px; padding: 15px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);">
-                        <h3 style="margin-bottom: 10px; color: ${extraBytes > 0 ? '#ff4d4d' : '#00e676'};">
-                            ${extraBytes > 0 ? '⚠️ Anomalia / Payload Detectado!' : '✅ Mídia Limpa'}
-                        </h3>
-                        <p><strong>Formato Detectado:</strong> ${format}</p>
-                        <p><strong>Tamanho Esperado (EOF):</strong> ${formatBytes(eof)}</p>
-                        <p><strong>Dados Excedentes (Payload):</strong> ${formatBytes(extraBytes)}</p>
-                        <p><strong>Tipo Estimado:</strong> ${hiddenType} (${payloadExt.toUpperCase()})</p>
-                    </div>
-                `;
+            // Atualiza os elementos da interface DOM sem destruir a estrutura HTML
+            const metaFormatEl = document.getElementById('detectMetaFormat');
+            const metaExpectedEl = document.getElementById('detectMetaExpected');
+            const metaExtraEl = document.getElementById('detectMetaExtra');
+            const metaTypeEl = document.getElementById('detectMetaType');
+
+            if (metaFormatEl) metaFormatEl.textContent = format || 'Desconhecido';
+            if (metaExpectedEl) metaExpectedEl.textContent = eof !== -1 ? formatBytes(eof) : 'N/A';
+            if (metaExtraEl) metaExtraEl.textContent = formatBytes(extraBytes);
+            if (metaTypeEl) metaTypeEl.textContent = extraBytes > 0 ? `${hiddenType} (.${payloadExt})` : 'Nenhum';
+
+            // Atualiza o banner de status principal
+            if (extraBytes > 0) {
+                setBanner(
+                    'detectStatusBanner',
+                    'suspicious',
+                    '⚠️ Anomalia / Payload Detectado!',
+                    `Foram identificados ${formatBytes(extraBytes)} de dados anexados após o fim oficial do container (${format}).`
+                );
+            } else {
+                setBanner(
+                    'detectStatusBanner',
+                    'clean',
+                    '✅ Mídia Integra / Limpa',
+                    `Nenhum dado oculto ou anomalia estrutural detectada na mídia (${format}).`
+                );
             }
         }
     };
@@ -233,7 +247,6 @@ function handleExtractFile(file) {
 function detectPayloadExtension(view) {
     if (!view || view.byteLength < 2) return 'bin';
 
-    // Procura a assinatura mágica ignorando pequenos paddings (0x00 ou 0xFF) de até 16 bytes
     let startOffset = 0;
     while (startOffset < Math.min(view.byteLength - 2, 16)) {
         const b = view.getUint8(startOffset);
@@ -242,14 +255,14 @@ function detectPayloadExtension(view) {
     }
 
     const SIGNATURES = [
-        { bytes: [0x4D, 0x5A], ext: 'exe' },                  // Windows Executable
-        { bytes: [0x50, 0x4B, 0x03, 0x04], ext: 'zip' },      // ZIP / DOCX / XLSX
-        { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar' },      // RAR
-        { bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], ext: '7z' }, // 7-Zip
-        { bytes: [0x25, 0x50, 0x44, 0x46], ext: 'pdf' },      // PDF
-        { bytes: [0x7F, 0x45, 0x4C, 0x46], ext: 'elf' },      // ELF Linux
-        { bytes: [0xFF, 0xD8, 0xFF], ext: 'jpg' },            // JPEG
-        { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png' }       // PNG
+        { bytes: [0x4D, 0x5A], ext: 'exe' },
+        { bytes: [0x50, 0x4B, 0x03, 0x04], ext: 'zip' },
+        { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar' },
+        { bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], ext: '7z' },
+        { bytes: [0x25, 0x50, 0x44, 0x46], ext: 'pdf' },
+        { bytes: [0x7F, 0x45, 0x4C, 0x46], ext: 'elf' },
+        { bytes: [0xFF, 0xD8, 0xFF], ext: 'jpg' },
+        { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png' }
     ];
 
     for (const sig of SIGNATURES) {
@@ -265,7 +278,6 @@ function detectPayloadExtension(view) {
         }
     }
 
-    // Checa se o conteúdo é texto plano / log (ASCII legível)
     let isText = true;
     const checkLength = Math.min(view.byteLength - startOffset, 256);
     for (let i = startOffset; i < startOffset + checkLength; i++) {
@@ -376,7 +388,6 @@ function findEofUniversal(view, fileName = '') {
     const length = view.byteLength;
     const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
 
-    // 1. ISOBMFF / AVIF / HEIC / MP4
     if (length >= 8 && (
         (view.getUint8(4) === 0x66 && view.getUint8(5) === 0x74 && view.getUint8(6) === 0x79 && view.getUint8(7) === 0x70) ||
         ext === 'avif' || ext === 'heic' || ext === 'mp4'
@@ -409,14 +420,13 @@ function findEofUniversal(view, fileName = '') {
         if (lastBox > 0) return { eof: lastBox };
     }
 
-    // 2. PNG
     for (let i = 0; i < Math.min(length - 8, 64); i++) {
         if (view.getUint8(i) === 0x89 && view.getUint8(i + 1) === 0x50 && view.getUint8(i + 2) === 0x4E && view.getUint8(i + 3) === 0x47) {
             let offset = i + 8;
             while (offset + 12 <= length) {
                 const chunkSize = view.getUint32(offset, false);
                 if (view.getUint8(offset + 4) === 0x49 && view.getUint8(offset + 5) === 0x45 &&
-                    view.getUint8(offset + 6) === 0x4E && view.getUint8(offset + 7) === 0x44) {
+                    view.getUint8(offset + 6) === 0x4E && view.getUint8(offset + 7) === 0x47) {
                     return { eof: offset + 12 };
                 }
                 if (chunkSize > length) break;
@@ -425,7 +435,6 @@ function findEofUniversal(view, fileName = '') {
         }
     }
 
-    // 3. JPEG
     if (length >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xD8) {
         for (let i = length - 2; i >= 2; i--) {
             if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
@@ -434,14 +443,12 @@ function findEofUniversal(view, fileName = '') {
         }
     }
 
-    // 4. RIFF (WEBP / WAV)
-    if (length >= 8 && view.getUint8(0) === 0x52 && view.getUint8(1) === 0x49 && view.getUint8(2) === 0x46 && view.getUint8(3) === 0x46) {
+    if (length >= 8 && view.getUint8(0) === 0x52 && view.getUint8(1) === 0x49 && view.getUint8(2) === 0x46 && view.getUint8(3) === 0x43) {
         const riffSize = view.getUint32(4, true);
         if (riffSize + 8 <= length) return { eof: riffSize + 8 };
     }
 
-    // 5. BMP
-    if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4D) {
+    if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4M) {
         const size = view.getUint32(2, true);
         if (size <= length && size > 0) return { eof: size };
     }
