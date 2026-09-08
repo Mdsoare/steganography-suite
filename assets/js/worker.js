@@ -42,9 +42,18 @@ function findMediaEOF(buffer, fileName = '') {
     const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
 
     try {
+        // Busca o cabeçalho PNG nos primeiros 64 bytes para cobrir dados prepended/junk
+        let pngStart = -1;
+        for (let i = 0; i < Math.min(length - 8, 64); i++) {
+            if (matchSignature(view, SIGNATURES.PNG_HEADER, i)) {
+                pngStart = i;
+                break;
+            }
+        }
+
         // 1. PNG (Chunks até IEND)
-        if (matchSignature(view, SIGNATURES.PNG_HEADER)) {
-            let offset = 8;
+        if (pngStart !== -1) {
+            let offset = pngStart + 8;
             while (offset + 12 <= length) {
                 const chunkSize = view.getUint32(offset, false);
                 if (matchSignature(view, SIGNATURES.PNG_END, offset + 4)) {
@@ -96,7 +105,7 @@ function findMediaEOF(buffer, fileName = '') {
         }
 
         // 5. ISOBMFF / MP4
-        else if (length >= 8 && (matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4) || ext === 'mp4' || ext === 'mov')) {
+        else if (length >= 8 && matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4)) {
             let offset = 0;
             let lastValidBoxEnd = 0;
 
@@ -121,7 +130,6 @@ function findMediaEOF(buffer, fileName = '') {
             if (lastValidBoxEnd > 0) return { eof: lastValidBoxEnd, format: 'MP4 / ISOBMFF' };
         }
     } catch {
-        // Retorno seguro caso a mídia possua cabeçalho malformado
         return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
     }
 
