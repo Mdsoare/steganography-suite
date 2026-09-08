@@ -120,7 +120,7 @@ function findMediaEOF(buffer, fileName = '') {
             }
             if (lastValidBoxEnd > 0) return { eof: lastValidBoxEnd, format: 'MP4 / ISOBMFF' };
         }
-    } catch (err) {
+    } catch {
         // Retorno seguro caso a mídia possua cabeçalho malformado
         return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
     }

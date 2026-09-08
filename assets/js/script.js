@@ -7,10 +7,20 @@
 if (self !== top) {
     try {
         top.location = self.location;
-    } catch (e) {
+    } catch {
         document.body.innerHTML = '<h1>Acesso não permitido em iframes.</h1>';
     }
 }
+
+// Declaração do Estado Global
+const state = {
+    detectFile: null,
+    joinImgFile: null,
+    joinSecretFile: null,
+    extractFile: null,
+    extractedData: { cleanImgBlob: null, payloadBlob: null, payloadExt: 'bin' },
+    activePreviewUrl: null
+};
 
 // Instanciação segura do Worker utilizando URL relativa ao módulo atual
 const forensicWorker = new Worker(new URL('worker.js', document.baseURI));
@@ -177,14 +187,13 @@ function checkJoinReady() {
 
 function handleExtractFile(file) {
     state.extractFile = file;
-
+    
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
-
-        // Processamento local de corte/extração
+        
         const view = new DataView(buffer);
-        const eofInfo = findEofLocally(view, file.name);
+        const eofInfo = findEofLocally(view);
 
         const resultSection = document.getElementById('extractResult');
         resultSection.classList.remove('hidden');
@@ -211,7 +220,6 @@ function handleExtractFile(file) {
 
 // --- CONFIGURAÇÃO DE EVENTOS DE BOTÕES ---
 function setupEventListeners() {
-    // Ação: Juntar Mídia + Secret
     document.getElementById('joinBtn').addEventListener('click', () => {
         if (!state.joinImgFile || !state.joinSecretFile) return;
 
@@ -223,7 +231,6 @@ function setupEventListeners() {
             readerSecret.onload = function (e2) {
                 const secretBuffer = e2.target.result;
 
-                // Concatenação em Uint8Array
                 const combined = new Uint8Array(imgBuffer.byteLength + secretBuffer.byteLength);
                 combined.set(new Uint8Array(imgBuffer), 0);
                 combined.set(new Uint8Array(secretBuffer), imgBuffer.byteLength);
@@ -238,7 +245,6 @@ function setupEventListeners() {
         readerImg.readAsArrayBuffer(state.joinImgFile);
     });
 
-    // Botões de Download da Extração
     document.getElementById('btnDownloadCleanImg').addEventListener('click', () => {
         if (state.extractedData.cleanImgBlob && state.extractFile) {
             downloadBlob(state.extractedData.cleanImgBlob, `clean_${state.extractFile.name}`);
@@ -251,7 +257,6 @@ function setupEventListeners() {
         }
     });
 
-    // Botões de Limpeza / Reset
     document.getElementById('btnResetDetect').addEventListener('click', () => {
         state.detectFile = null;
         document.getElementById('detectFileInput').value = '';
@@ -290,10 +295,9 @@ function downloadBlob(blob, filename) {
     setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
-function findEofLocally(view, fileName) {
+function findEofLocally(view) {
     const length = view.byteLength;
 
-    // Detecção básica para extração local (PNG / JPEG / BMP)
     if (length >= 8 && view.getUint8(0) === 0x89 && view.getUint8(1) === 0x50) {
         let offset = 8;
         while (offset + 8 <= length) {
