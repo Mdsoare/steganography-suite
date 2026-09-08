@@ -450,22 +450,59 @@ function resetExtractTab() {
 }
 
 function findImageEOF(bytes) {
+    if (bytes.length >= 8 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+        let offset = 0;
+        let lastValidBoxEnd = -1;
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+        try {
+            while (offset + 8 <= bytes.length) {
+                let boxSize = view.getUint32(offset, false);
+                let headerSize = 8;
+
+                if (boxSize === 1) {
+                    if (offset + 16 > bytes.length) break;
+                    boxSize = Number(view.getBigUint64(offset + 8, false));
+                    headerSize = 16;
+                } else if (boxSize === 0) {
+                    lastValidBoxEnd = bytes.length;
+                    break;
+                }
+
+                if (boxSize < headerSize || offset + boxSize > bytes.length) break;
+
+                offset += boxSize;
+                lastValidBoxEnd = offset;
+            }
+
+            if (lastValidBoxEnd > 0) {
+                return { eof: lastValidBoxEnd, format: 'ISOBMFF (AVIF)' };
+            }
+        } catch (e) {
+            console.error("Erro ao analisar boxes ISOBMFF:", e);
+        }
+    }
+
     if (matchSignature(bytes, SIGNATURES.PNG_HEADER)) {
         for (let i = bytes.length - 8; i >= 0; i--) {
             if (matchSignature(bytes, SIGNATURES.PNG_END, i)) return { eof: i + 8, format: 'PNG' };
         }
-    } else if (matchSignature(bytes, SIGNATURES.JPEG_HEADER)) {
+    }
+    else if (matchSignature(bytes, SIGNATURES.JPEG_HEADER)) {
         for (let i = bytes.length - 2; i >= 0; i--) {
             if (matchSignature(bytes, SIGNATURES.JPEG_END, i)) return { eof: i + 2, format: 'JPEG' };
         }
-    } else if (matchSignature(bytes, SIGNATURES.GIF_HEADER)) {
+    }
+    else if (matchSignature(bytes, SIGNATURES.GIF_HEADER)) {
         for (let i = bytes.length - 1; i >= 0; i--) {
             if (matchSignature(bytes, SIGNATURES.GIF_END, i)) return { eof: i + 1, format: 'GIF' };
         }
-    } else if (bytes[0] === 0x42 && bytes[1] === 0x4D) {
+    } 
+    else if (bytes[0] === 0x42 && bytes[1] === 0x4D) {
         const size = bytes[2] | (bytes[3] << 8) | (bytes[4] << 16) | (bytes[5] << 24);
         if (size <= bytes.length) return { eof: size, format: 'BMP' };
     }
+    
     return { eof: -1, format: 'Desconhecido' };
 }
 
