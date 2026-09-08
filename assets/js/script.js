@@ -20,7 +20,6 @@ const state = {
     activePreviewUrl: null
 };
 
-// Certifique-se de usar o caminho relativo correto até o worker.js
 const forensicWorker = new Worker('worker.js');
 
 forensicWorker.onerror = function (error) {
@@ -179,6 +178,7 @@ function checkJoinReady() {
     btn.disabled = !(state.joinImgFile && state.joinSecretFile);
 }
 
+// --- EXTRAÇÃO DE PAYLOAD ---
 function handleExtractFile(file) {
     state.extractFile = file;
     
@@ -186,7 +186,9 @@ function handleExtractFile(file) {
     reader.onload = function (e) {
         const buffer = e.target.result;
         const view = new DataView(buffer);
-        const eofInfo = findEofLocally(view);
+        
+        // Utiliza o mesmo parser robusto
+        const eofInfo = findEofUniversal(view, file.name);
 
         const resultSection = document.getElementById('extractResult');
         resultSection.classList.remove('hidden');
@@ -286,26 +288,55 @@ function downloadBlob(blob, filename) {
     setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
-function findEofLocally(view) {
+// Universal EOF Parser no cliente para a extração
+function findEofUniversal(view, fileName = '') {
     const length = view.byteLength;
 
-    if (length >= 8 && view.getUint8(0) === 0x89 && view.getUint8(1) === 0x50) {
-        let offset = 8;
-        while (offset + 8 <= length) {
-            const chunkSize = view.getUint32(offset, false);
-            if (view.getUint8(offset + 4) === 0x49 && view.getUint8(offset + 5) === 0x45 &&
-                view.getUint8(offset + 6) === 0x4E && view.getUint8(offset + 7) === 0x44) {
-                return { eof: offset + 12 };
+    // PNG
+    for (let i = 0; i < Math.min(length - 8, 64); i++) {
+        if (view.getUint8(i) === 0x89 && view.getUint8(i + 1) === 0x50 && view.getUint8(i + 2) === 0x4E && view.getUint8(i + 3) === 0x47) {
+            let offset = i + 8;
+            while (offset + 12 <= length) {
+                const chunkSize = view.getUint32(offset, false);
+                if (view.getUint8(offset + 4) === 0x49 && view.getUint8(offset + 5) === 0x45 &&
+                    view.getUint8(offset + 6) === 0x4E && view.getUint8(offset + 7) === 0x44) {
+                    return { eof: offset + 12 };
+                }
+                if (chunkSize > length) break;
+                offset += 12 + chunkSize;
             }
-            offset += 12 + chunkSize;
         }
-    } else if (length >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xD8) {
+    }
+
+    // JPEG
+    if (length >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xD8) {
         for (let i = length - 2; i >= 2; i--) {
             if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
                 return { eof: i + 2 };
             }
         }
     }
+
+    // RIFF (WEBP / WAV)
+    if (length >= 8 && view.getUint8(0) === 0x52 && view.getUint8(1) === 0x49 && view.getUint8(2) === 0x46 && view.getUint8(3) === 0x46) {
+        const riffSize = view.getUint32(4, true);
+        if (riffSize + 8 <= length) return { eof: riffSize + 8 };
+    }
+
+    // ISOBMFF (MP4 / AVIF)
+    if (length >= 8 && view.getUint8(4) === 0x66 && view.getUint8(5) === 0x74 && view.getUint8(6) === 0x79 && view.getUint8(7) === 0x70) {
+        let offset = 0;
+        let lastBox = 0;
+        while (offset + 8 <= length) {
+            let boxSize = view.getUint32(offset, false);
+            if (boxSize === 0) { lastBox = length; break; }
+            if (boxSize < 8 || offset + boxSize > length) break;
+            offset += boxSize;
+            lastBox = offset;
+        }
+        if (lastBox > 0) return { eof: lastBox };
+    }
+
     return { eof: -1 };
 }
 

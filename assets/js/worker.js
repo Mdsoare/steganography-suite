@@ -10,6 +10,7 @@ const SIGNATURES = {
     JPEG_END: [0xFF, 0xD9],
     GIF_HEADER: [0x47, 0x49, 0x46, 0x38],
     AVI_HEADER: [0x52, 0x49, 0x46, 0x46],
+    WEBP_HEADER: [0x57, 0x41, 0x56, 0x45],
 
     PAYLOADS: [
         { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar', label: 'Arquivo RAR' },
@@ -30,7 +31,7 @@ function matchSignature(view, target, offset = 0) {
 }
 
 /**
- * Análise Estrutural Baseada em Parsing Real de Segm/Containers
+ * Análise Estrutural do Container de Mídia
  */
 function findMediaEOF(buffer, fileName = '') {
     if (!buffer || buffer.byteLength === 0) {
@@ -42,7 +43,7 @@ function findMediaEOF(buffer, fileName = '') {
     const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
 
     try {
-        // Busca o cabeçalho PNG nos primeiros 64 bytes para cobrir dados prepended/junk
+        // 1. Busca PNG (Suporta offset inicial e varredura de chunks)
         let pngStart = -1;
         for (let i = 0; i < Math.min(length - 8, 64); i++) {
             if (matchSignature(view, SIGNATURES.PNG_HEADER, i)) {
@@ -51,7 +52,6 @@ function findMediaEOF(buffer, fileName = '') {
             }
         }
 
-        // 1. PNG (Chunks até IEND)
         if (pngStart !== -1) {
             let offset = pngStart + 8;
             while (offset + 12 <= length) {
@@ -59,12 +59,14 @@ function findMediaEOF(buffer, fileName = '') {
                 if (matchSignature(view, SIGNATURES.PNG_END, offset + 4)) {
                     return { eof: offset + 12, format: 'PNG' };
                 }
+                // Previne loop infinito com tamanhos inválidos
+                if (chunkSize > length) break;
                 offset += 12 + chunkSize;
             }
         }
 
-        // 2. JPEG (Parsing Sequencial)
-        else if (matchSignature(view, SIGNATURES.JPEG_HEADER)) {
+        // 2. JPEG (Busca do EOI 0xFFD9 após o SOS 0xDA)
+        if (matchSignature(view, SIGNATURES.JPEG_HEADER)) {
             let offset = 2;
             while (offset < length - 1) {
                 if (view.getUint8(offset) !== 0xFF) {
@@ -91,21 +93,18 @@ function findMediaEOF(buffer, fileName = '') {
             }
         }
 
-        // 3. BMP
-        else if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4D) {
-            const size = view.getUint32(2, true);
-            if (size <= length && size > 0) return { eof: size, format: 'BMP' };
-        }
-
-        // 4. RIFF Container (AVI / WAV)
-        else if (matchSignature(view, SIGNATURES.AVI_HEADER)) {
+        // 3. RIFF (WEBP / WAV / AVI)
+        if (matchSignature(view, SIGNATURES.AVI_HEADER)) {
             const riffSize = view.getUint32(4, true);
             const totalRiff = riffSize + 8;
-            if (totalRiff <= length) return { eof: totalRiff, format: ext.toUpperCase() || 'RIFF Media' };
+            if (totalRiff <= length) {
+                const subType = ext ? ext.toUpperCase() : 'RIFF Container';
+                return { eof: totalRiff, format: subType };
+            }
         }
 
-        // 5. ISOBMFF / MP4
-        else if (length >= 8 && matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4)) {
+        // 4. ISOBMFF / MP4 / AVIF / HEIC
+        if (length >= 8 && matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4)) {
             let offset = 0;
             let lastValidBoxEnd = 0;
 
@@ -127,20 +126,26 @@ function findMediaEOF(buffer, fileName = '') {
                 offset += boxSize;
                 lastValidBoxEnd = offset;
             }
-            if (lastValidBoxEnd > 0) return { eof: lastValidBoxEnd, format: 'MP4 / ISOBMFF' };
+            if (lastValidBoxEnd > 0) {
+                const detectedFormat = ext ? ext.toUpperCase() : 'ISOBMFF Container';
+                return { eof: lastValidBoxEnd, format: detectedFormat };
+            }
         }
-    } catch {
+
+        // 5. BMP
+        if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4D) {
+            const size = view.getUint32(2, true);
+            if (size <= length && size > 0) return { eof: size, format: 'BMP' };
+        }
+
+    } catch (e) {
         return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
     }
 
     return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
 }
 
-self.onmessage = function (e) {  
-    if (e.origin && self.location && self.location.origin && e.origin !== 'null' && e.origin !== self.location.origin) {
-        return;
-    }
-
+self.onmessage = function (e) {
     const { action, buffer, fileName } = e.data || {};
 
     if (action === 'ANALYZE_MEDIA' && buffer) {
