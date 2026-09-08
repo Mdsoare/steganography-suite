@@ -10,7 +10,6 @@ const SIGNATURES = {
     JPEG_END: [0xFF, 0xD9],
     GIF_HEADER: [0x47, 0x49, 0x46, 0x38],
     AVI_HEADER: [0x52, 0x49, 0x46, 0x46],
-    WEBP_HEADER: [0x57, 0x41, 0x56, 0x45],
 
     PAYLOADS: [
         { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar', label: 'Arquivo RAR' },
@@ -31,7 +30,7 @@ function matchSignature(view, target, offset = 0) {
 }
 
 /**
- * Análise Estrutural do Container de Mídia
+ * Motor Unificado para Determinar EOF Forense
  */
 function findMediaEOF(buffer, fileName = '') {
     if (!buffer || buffer.byteLength === 0) {
@@ -43,7 +42,41 @@ function findMediaEOF(buffer, fileName = '') {
     const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
 
     try {
-        // 1. Busca PNG (Suporta offset inicial e varredura de chunks)
+        // 1. ISOBMFF / AVIF / HEIC / MP4 (Varredura Estrutural por Atom/Box)
+        if (length >= 8 && (matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4) || ext === 'avif' || ext === 'heic' || ext === 'mp4')) {
+            let offset = 0;
+            let lastValidBoxEnd = -1;
+
+            while (offset + 8 <= length) {
+                let boxSize = view.getUint32(offset, false);
+                let headerSize = 8;
+
+                if (boxSize === 1) { // Large size (64-bit)
+                    if (offset + 16 > length) break;
+                    const bigSize = view.getBigUint64(offset + 8, false);
+                    boxSize = Number(bigSize);
+                    headerSize = 16;
+                } else if (boxSize === 0) { // Box até o final do arquivo original
+                    lastValidBoxEnd = length;
+                    break;
+                }
+
+                // Se o tamanho do box for menor que o cabeçalho ou exceder o buffer, atingimos o EOF da mídia original
+                if (boxSize < headerSize || offset + boxSize > length) {
+                    break;
+                }
+
+                offset += boxSize;
+                lastValidBoxEnd = offset;
+            }
+
+            if (lastValidBoxEnd > 0) {
+                const detectedFormat = ext ? ext.toUpperCase() : 'ISOBMFF/AVIF';
+                return { eof: lastValidBoxEnd, format: detectedFormat };
+            }
+        }
+
+        // 2. PNG
         let pngStart = -1;
         for (let i = 0; i < Math.min(length - 8, 64); i++) {
             if (matchSignature(view, SIGNATURES.PNG_HEADER, i)) {
@@ -59,13 +92,12 @@ function findMediaEOF(buffer, fileName = '') {
                 if (matchSignature(view, SIGNATURES.PNG_END, offset + 4)) {
                     return { eof: offset + 12, format: 'PNG' };
                 }
-                // Previne loop infinito com tamanhos inválidos
                 if (chunkSize > length) break;
                 offset += 12 + chunkSize;
             }
         }
 
-        // 2. JPEG (Busca do EOI 0xFFD9 após o SOS 0xDA)
+        // 3. JPEG
         if (matchSignature(view, SIGNATURES.JPEG_HEADER)) {
             let offset = 2;
             while (offset < length - 1) {
@@ -75,7 +107,7 @@ function findMediaEOF(buffer, fileName = '') {
                 }
                 const marker = view.getUint8(offset + 1);
 
-                if (marker === 0xDA) {
+                if (marker === 0xDA) { // SOS (Start of Scan)
                     for (let i = length - 2; i >= offset; i--) {
                         if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
                             return { eof: i + 2, format: 'JPEG' };
@@ -93,42 +125,13 @@ function findMediaEOF(buffer, fileName = '') {
             }
         }
 
-        // 3. RIFF (WEBP / WAV / AVI)
+        // 4. RIFF (WEBP / WAV / AVI)
         if (matchSignature(view, SIGNATURES.AVI_HEADER)) {
             const riffSize = view.getUint32(4, true);
             const totalRiff = riffSize + 8;
             if (totalRiff <= length) {
                 const subType = ext ? ext.toUpperCase() : 'RIFF Container';
                 return { eof: totalRiff, format: subType };
-            }
-        }
-
-        // 4. ISOBMFF / MP4 / AVIF / HEIC
-        if (length >= 8 && matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4)) {
-            let offset = 0;
-            let lastValidBoxEnd = 0;
-
-            while (offset + 8 <= length) {
-                let boxSize = view.getUint32(offset, false);
-                let headerSize = 8;
-
-                if (boxSize === 1) {
-                    if (offset + 16 > length) break;
-                    const bigSize = view.getBigUint64(offset + 8, false);
-                    boxSize = Number(bigSize);
-                    headerSize = 16;
-                } else if (boxSize === 0) {
-                    lastValidBoxEnd = length;
-                    break;
-                }
-
-                if (boxSize < headerSize || offset + boxSize > length) break;
-                offset += boxSize;
-                lastValidBoxEnd = offset;
-            }
-            if (lastValidBoxEnd > 0) {
-                const detectedFormat = ext ? ext.toUpperCase() : 'ISOBMFF Container';
-                return { eof: lastValidBoxEnd, format: detectedFormat };
             }
         }
 
@@ -139,7 +142,7 @@ function findMediaEOF(buffer, fileName = '') {
         }
 
     } catch (e) {
-        return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
+        return { eof: -1, format: ext ? ext.toUpperCase() : 'Erro no Parsing' };
     }
 
     return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
@@ -149,22 +152,26 @@ self.onmessage = function (e) {
     const { action, buffer, fileName } = e.data || {};
 
     if (action === 'ANALYZE_MEDIA' && buffer) {
-        const view = new DataView(buffer);
-        const { eof, format } = findMediaEOF(buffer, fileName);
+        try {
+            const view = new DataView(buffer);
+            const { eof, format } = findMediaEOF(buffer, fileName);
 
-        let hiddenType = 'Dados Genéricos';
-        let extraBytes = 0;
+            let hiddenType = 'Dados Genéricos';
+            let extraBytes = 0;
 
-        if (eof !== -1 && buffer.byteLength > eof) {
-            extraBytes = buffer.byteLength - eof;
-            for (const payload of SIGNATURES.PAYLOADS) {
-                if (matchSignature(view, payload.bytes, eof)) {
-                    hiddenType = payload.label;
-                    break;
+            if (eof !== -1 && buffer.byteLength > eof) {
+                extraBytes = buffer.byteLength - eof;
+                for (const payload of SIGNATURES.PAYLOADS) {
+                    if (matchSignature(view, payload.bytes, eof)) {
+                        hiddenType = payload.label;
+                        break;
+                    }
                 }
             }
-        }
 
-        self.postMessage({ action: 'ANALYSIS_COMPLETE', eof, format, extraBytes, hiddenType });
+            self.postMessage({ action: 'ANALYSIS_COMPLETE', eof, format, extraBytes, hiddenType });
+        } catch (err) {
+            self.postMessage({ action: 'ANALYSIS_COMPLETE', eof: -1, format: 'Erro de Leitura', extraBytes: 0, hiddenType: 'Nenhum' });
+        }
     }
 };

@@ -22,10 +22,6 @@ const state = {
 
 const forensicWorker = new Worker('worker.js');
 
-forensicWorker.onerror = function (error) {
-    console.error("Erro no Worker Forense:", error);
-};
-
 document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
     setupDragAndDrop();
@@ -35,6 +31,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- COMUNICAÇÃO COM O WEB WORKER ---
 function setupWorkerListeners() {
+    forensicWorker.onerror = function (error) {
+        console.error("Erro no Worker Forense:", error);
+        setBanner('detectStatusBanner', 'warning', 'Erro de Processamento', 'Falha interna durante a execução da análise forense.');
+    };
+
     forensicWorker.onmessage = function (e) {
         const { action, eof, format, extraBytes, hiddenType } = e.data || {};
 
@@ -45,7 +46,7 @@ function setupWorkerListeners() {
             document.getElementById('detectMetaFormat').textContent = format;
 
             if (eof === -1) {
-                setBanner('detectStatusBanner', 'warning', 'Estrutura Não Reconhecida', 'Não foi possível determinar o limite do container da mídia.');
+                setBanner('detectStatusBanner', 'warning', 'Estrutura Não Reconhecida', 'Não foi possível determinar o limite exato do container da mídia.');
                 document.getElementById('detectMetaExpected').textContent = '-';
                 document.getElementById('detectMetaExtra').textContent = '0 Bytes';
                 document.getElementById('detectMetaType').textContent = 'N/A';
@@ -105,9 +106,10 @@ function handleDetectFile(file) {
         const sampleView = new DataView(buffer);
         document.getElementById('detectHexViewer').textContent = bytesToHexDump(sampleView, 0, Math.min(buffer.byteLength, 256));
 
+        // Envia uma cópia limpa do buffer para o worker evitar mutação de memória
         forensicWorker.postMessage({
             action: 'ANALYZE_MEDIA',
-            buffer: buffer,
+            buffer: buffer.slice(0),
             fileName: file.name
         });
     };
@@ -187,7 +189,7 @@ function handleExtractFile(file) {
         const buffer = e.target.result;
         const view = new DataView(buffer);
         
-        // Utiliza o mesmo parser robusto
+        // Aplica o mesmo motor unificado de cálculo do EOF
         const eofInfo = findEofUniversal(view, file.name);
 
         const resultSection = document.getElementById('extractResult');
@@ -288,11 +290,47 @@ function downloadBlob(blob, filename) {
     setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
-// Universal EOF Parser no cliente para a extração
+/**
+ * Parser Universal de EOF no Cliente
+ */
 function findEofUniversal(view, fileName = '') {
     const length = view.byteLength;
+    const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
 
-    // PNG
+    // 1. ISOBMFF / AVIF / HEIC / MP4
+    if (length >= 8 && (
+        (view.getUint8(4) === 0x66 && view.getUint8(5) === 0x74 && view.getUint8(6) === 0x79 && view.getUint8(7) === 0x70) ||
+        ext === 'avif' || ext === 'heic' || ext === 'mp4'
+    )) {
+        let offset = 0;
+        let lastBox = -1;
+
+        while (offset + 8 <= length) {
+            let boxSize = view.getUint32(offset, false);
+            let headerSize = 8;
+
+            if (boxSize === 1) {
+                if (offset + 16 > length) break;
+                const bigSize = view.getBigUint64(offset + 8, false);
+                boxSize = Number(bigSize);
+                headerSize = 16;
+            } else if (boxSize === 0) {
+                lastBox = length;
+                break;
+            }
+
+            if (boxSize < headerSize || offset + boxSize > length) {
+                break;
+            }
+
+            offset += boxSize;
+            lastBox = offset;
+        }
+
+        if (lastBox > 0) return { eof: lastBox };
+    }
+
+    // 2. PNG
     for (let i = 0; i < Math.min(length - 8, 64); i++) {
         if (view.getUint8(i) === 0x89 && view.getUint8(i + 1) === 0x50 && view.getUint8(i + 2) === 0x4E && view.getUint8(i + 3) === 0x47) {
             let offset = i + 8;
@@ -308,7 +346,7 @@ function findEofUniversal(view, fileName = '') {
         }
     }
 
-    // JPEG
+    // 3. JPEG
     if (length >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xD8) {
         for (let i = length - 2; i >= 2; i--) {
             if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
@@ -317,24 +355,16 @@ function findEofUniversal(view, fileName = '') {
         }
     }
 
-    // RIFF (WEBP / WAV)
+    // 4. RIFF (WEBP / WAV)
     if (length >= 8 && view.getUint8(0) === 0x52 && view.getUint8(1) === 0x49 && view.getUint8(2) === 0x46 && view.getUint8(3) === 0x46) {
         const riffSize = view.getUint32(4, true);
         if (riffSize + 8 <= length) return { eof: riffSize + 8 };
     }
 
-    // ISOBMFF (MP4 / AVIF)
-    if (length >= 8 && view.getUint8(4) === 0x66 && view.getUint8(5) === 0x74 && view.getUint8(6) === 0x79 && view.getUint8(7) === 0x70) {
-        let offset = 0;
-        let lastBox = 0;
-        while (offset + 8 <= length) {
-            let boxSize = view.getUint32(offset, false);
-            if (boxSize === 0) { lastBox = length; break; }
-            if (boxSize < 8 || offset + boxSize > length) break;
-            offset += boxSize;
-            lastBox = offset;
-        }
-        if (lastBox > 0) return { eof: lastBox };
+    // 5. BMP
+    if (length >= 6 && view.getUint8(0) === 0x42 && view.getUint8(1) === 0x4D) {
+        const size = view.getUint32(2, true);
+        if (size <= length && size > 0) return { eof: size };
     }
 
     return { eof: -1 };
