@@ -37,13 +37,17 @@ function setupWorkerListeners() {
     };
 
     forensicWorker.onmessage = function (e) {
-        const { action, eof, format, extraBytes, hiddenType } = e.data || {};
+        const { action, eof, format, extraBytes, hiddenType, payloadExt } = e.data || {};
 
         if (action === 'ANALYSIS_COMPLETE') {
             const resultSection = document.getElementById('detectResult');
-            resultSection.classList.remove('hidden');
+            if (resultSection) {
+                resultSection.classList.remove('hidden');
+                resultSection.style.display = 'block';
+            }
 
-            document.getElementById('detectMetaFormat').textContent = format;
+            const formatEl = document.getElementById('detectMetaFormat');
+            if (formatEl) formatEl.textContent = format;
 
             if (eof === -1) {
                 setBanner('detectStatusBanner', 'warning', 'Estrutura Não Reconhecida', 'Não foi possível determinar o limite exato do container da mídia.');
@@ -57,7 +61,7 @@ function setupWorkerListeners() {
             document.getElementById('detectMetaExtra').textContent = formatBytes(extraBytes);
 
             if (extraBytes > 0) {
-                document.getElementById('detectMetaType').textContent = hiddenType;
+                document.getElementById('detectMetaType').textContent = `${hiddenType} (.${payloadExt})`;
                 setBanner('detectStatusBanner', 'suspicious', '⚠️ Conteúdo Oculto Identificado!', `Anomalia detectada: ${formatBytes(extraBytes)} de dados após o EOF da mídia.`);
             } else {
                 document.getElementById('detectMetaType').textContent = 'Nenhum';
@@ -71,42 +75,49 @@ function setupWorkerListeners() {
 function handleDetectFile(file) {
     if (!file) return;
     state.detectFile = file;
-    document.getElementById('detectFileName').textContent = file.name;
-    document.getElementById('detectFileSize').textContent = formatBytes(file.size);
+    
+    const fileNameEl = document.getElementById('detectFileName');
+    const fileSizeEl = document.getElementById('detectFileSize');
+    if (fileNameEl) fileNameEl.textContent = file.name;
+    if (fileSizeEl) fileSizeEl.textContent = formatBytes(file.size);
 
     revokeActivePreview();
     state.activePreviewUrl = URL.createObjectURL(file);
 
     const container = document.getElementById('mediaPreviewContainer');
-    container.textContent = ''; 
+    if (container) {
+        container.textContent = ''; 
 
-    if (file.type.startsWith('image/')) {
-        const img = document.createElement('img');
-        img.src = state.activePreviewUrl;
-        img.className = 'preview-thumb';
-        img.alt = 'Preview';
-        container.appendChild(img);
-    } else if (file.type.startsWith('video/')) {
-        const video = document.createElement('video');
-        video.src = state.activePreviewUrl;
-        video.className = 'preview-thumb';
-        video.controls = true;
-        container.appendChild(video);
-    } else {
-        const icon = document.createElement('div');
-        icon.textContent = '📁';
-        icon.style.fontSize = '1.8rem';
-        container.appendChild(icon);
+        if (file.type.startsWith('image/')) {
+            const img = document.createElement('img');
+            img.src = state.activePreviewUrl;
+            img.className = 'preview-thumb';
+            img.alt = 'Preview';
+            container.appendChild(img);
+        } else if (file.type.startsWith('video/')) {
+            const video = document.createElement('video');
+            video.src = state.activePreviewUrl;
+            video.className = 'preview-thumb';
+            video.controls = true;
+            container.appendChild(video);
+        } else {
+            const icon = document.createElement('div');
+            icon.textContent = '📁';
+            icon.style.fontSize = '1.8rem';
+            container.appendChild(icon);
+        }
     }
 
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
         
-        const sampleView = new DataView(buffer);
-        document.getElementById('detectHexViewer').textContent = bytesToHexDump(sampleView, 0, Math.min(buffer.byteLength, 256));
+        const hexViewer = document.getElementById('detectHexViewer');
+        if (hexViewer) {
+            const sampleView = new DataView(buffer);
+            hexViewer.textContent = bytesToHexDump(sampleView, 0, Math.min(buffer.byteLength, 256));
+        }
 
-        // Envia uma cópia limpa do buffer para o worker evitar mutação de memória
         forensicWorker.postMessage({
             action: 'ANALYZE_MEDIA',
             buffer: buffer.slice(0),
@@ -189,11 +200,13 @@ function handleExtractFile(file) {
         const buffer = e.target.result;
         const view = new DataView(buffer);
         
-        // Aplica o mesmo motor unificado de cálculo do EOF
         const eofInfo = findEofUniversal(view, file.name);
 
         const resultSection = document.getElementById('extractResult');
-        resultSection.classList.remove('hidden');
+        if (resultSection) {
+            resultSection.classList.remove('hidden');
+            resultSection.style.display = 'block';
+        }
 
         if (eofInfo.eof === -1 || buffer.byteLength <= eofInfo.eof) {
             setBanner('extractStatusBanner', 'warning', 'Nenhum Payload Encontrado', 'A mídia selecionada não possui dados concatenados anexados.');
@@ -205,14 +218,59 @@ function handleExtractFile(file) {
         const cleanBuffer = buffer.slice(0, eofInfo.eof);
         const payloadBuffer = buffer.slice(eofInfo.eof);
 
+        // Identifica extensão do payload extraído
+        const payloadView = new DataView(payloadBuffer);
+        const detectedExt = detectPayloadExtension(payloadView);
+
         state.extractedData.cleanImgBlob = new Blob([cleanBuffer], { type: file.type || 'application/octet-stream' });
         state.extractedData.payloadBlob = new Blob([payloadBuffer], { type: 'application/octet-stream' });
+        state.extractedData.payloadExt = detectedExt;
 
-        setBanner('extractStatusBanner', 'suspicious', 'Payload Oculto Extraído!', `Foram isolados ${formatBytes(payloadBuffer.byteLength)} de payload da mídia original.`);
+        setBanner('extractStatusBanner', 'suspicious', 'Payload Oculto Extraído!', `Foram isolados ${formatBytes(payloadBuffer.byteLength)} de payload (.${detectedExt}) da mídia original.`);
         document.getElementById('btnDownloadCleanImg').style.display = 'inline-block';
         document.getElementById('btnDownloadPayload').style.display = 'inline-block';
     };
     reader.readAsArrayBuffer(file);
+}
+
+function detectPayloadExtension(view) {
+    if (view.byteLength < 2) return 'bin';
+
+    const SIGNATURES = [
+        { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar' },
+        { bytes: [0x50, 0x4B, 0x03, 0x04], ext: 'zip' },
+        { bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], ext: '7z' },
+        { bytes: [0x25, 0x50, 0x44, 0x46], ext: 'pdf' },
+        { bytes: [0x4D, 0x5A], ext: 'exe' },
+        { bytes: [0x7F, 0x45, 0x4C, 0x46], ext: 'bin' }
+    ];
+
+    for (const sig of SIGNATURES) {
+        if (view.byteLength >= sig.bytes.length) {
+            let match = true;
+            for (let i = 0; i < sig.bytes.length; i++) {
+                if (view.getUint8(i) !== sig.bytes[i]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return sig.ext;
+        }
+    }
+
+    // Tenta identificar se é texto/log (ASCII)
+    let isText = true;
+    const checkLength = Math.min(view.byteLength, 128);
+    for (let i = 0; i < checkLength; i++) {
+        const byte = view.getUint8(i);
+        if ((byte < 0x09 || byte > 0x0D) && (byte < 0x20 || byte > 0x7E)) {
+            isText = false;
+            break;
+        }
+    }
+    if (isText) return 'log';
+
+    return 'bin';
 }
 
 function setupEventListeners() {
@@ -234,7 +292,11 @@ function setupEventListeners() {
                 const blob = new Blob([combined], { type: state.joinImgFile.type || 'application/octet-stream' });
                 downloadBlob(blob, `stego_${state.joinImgFile.name}`);
 
-                document.getElementById('joinStatusBanner').classList.remove('hidden');
+                const banner = document.getElementById('joinStatusBanner');
+                if (banner) {
+                    banner.classList.remove('hidden');
+                    banner.style.display = 'block';
+                }
             };
             readerSecret.readAsArrayBuffer(state.joinSecretFile);
         };
@@ -249,14 +311,19 @@ function setupEventListeners() {
 
     document.getElementById('btnDownloadPayload').addEventListener('click', () => {
         if (state.extractedData.payloadBlob) {
-            downloadBlob(state.extractedData.payloadBlob, `extracted_payload.bin`);
+            const ext = state.extractedData.payloadExt || 'bin';
+            downloadBlob(state.extractedData.payloadBlob, `extracted_payload.${ext}`);
         }
     });
 
     document.getElementById('btnResetDetect').addEventListener('click', () => {
         state.detectFile = null;
         document.getElementById('detectFileInput').value = '';
-        document.getElementById('detectResult').classList.add('hidden');
+        const res = document.getElementById('detectResult');
+        if (res) {
+            res.classList.add('hidden');
+            res.style.display = 'none';
+        }
         revokeActivePreview();
     });
 
@@ -268,14 +335,22 @@ function setupEventListeners() {
         document.getElementById('joinImgName').textContent = 'Nenhum arquivo selecionado';
         document.getElementById('joinSecretName').textContent = 'ZIP, RAR, PDF, TXT, EXE, etc.';
         document.getElementById('joinBtn').disabled = true;
-        document.getElementById('joinStatusBanner').classList.add('hidden');
+        const banner = document.getElementById('joinStatusBanner');
+        if (banner) {
+            banner.classList.add('hidden');
+            banner.style.display = 'none';
+        }
     });
 
     document.getElementById('btnResetExtract').addEventListener('click', () => {
         state.extractFile = null;
         state.extractedData = { cleanImgBlob: null, payloadBlob: null, payloadExt: 'bin' };
         document.getElementById('extractFileInput').value = '';
-        document.getElementById('extractResult').classList.add('hidden');
+        const res = document.getElementById('extractResult');
+        if (res) {
+            res.classList.add('hidden');
+            res.style.display = 'none';
+        }
     });
 }
 
@@ -290,9 +365,6 @@ function downloadBlob(blob, filename) {
     setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
-/**
- * Parser Universal de EOF no Cliente
- */
 function findEofUniversal(view, fileName = '') {
     const length = view.byteLength;
     const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';

@@ -17,7 +17,8 @@ const SIGNATURES = {
         { bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], ext: '7z', label: 'Arquivo 7-Zip' },
         { bytes: [0x25, 0x50, 0x44, 0x46], ext: 'pdf', label: 'Documento PDF' },
         { bytes: [0x4D, 0x5A], ext: 'exe', label: 'Executável Windows (PE)' },
-        { bytes: [0x7F, 0x45, 0x4C, 0x46], ext: 'bin', label: 'Executável Linux (ELF)' }
+        { bytes: [0x7F, 0x45, 0x4C, 0x46], ext: 'bin', label: 'Executável Linux (ELF)' },
+        { bytes: [0x23, 0x21], ext: 'sh', label: 'Script Shell' }
     ]
 };
 
@@ -29,9 +30,6 @@ function matchSignature(view, target, offset = 0) {
     return true;
 }
 
-/**
- * Motor Unificado para Determinar EOF Forense
- */
 function findMediaEOF(buffer, fileName = '') {
     if (!buffer || buffer.byteLength === 0) {
         return { eof: -1, format: 'Desconhecido' };
@@ -42,7 +40,7 @@ function findMediaEOF(buffer, fileName = '') {
     const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
 
     try {
-        // 1. ISOBMFF / AVIF / HEIC / MP4 (Varredura Estrutural por Atom/Box)
+        // 1. ISOBMFF / AVIF / HEIC / MP4
         if (length >= 8 && (matchSignature(view, [0x66, 0x74, 0x79, 0x70], 4) || ext === 'avif' || ext === 'heic' || ext === 'mp4')) {
             let offset = 0;
             let lastValidBoxEnd = -1;
@@ -51,17 +49,16 @@ function findMediaEOF(buffer, fileName = '') {
                 let boxSize = view.getUint32(offset, false);
                 let headerSize = 8;
 
-                if (boxSize === 1) { // Large size (64-bit)
+                if (boxSize === 1) {
                     if (offset + 16 > length) break;
                     const bigSize = view.getBigUint64(offset + 8, false);
                     boxSize = Number(bigSize);
                     headerSize = 16;
-                } else if (boxSize === 0) { // Box até o final do arquivo original
+                } else if (boxSize === 0) {
                     lastValidBoxEnd = length;
                     break;
                 }
 
-                // Se o tamanho do box for menor que o cabeçalho ou exceder o buffer, atingimos o EOF da mídia original
                 if (boxSize < headerSize || offset + boxSize > length) {
                     break;
                 }
@@ -107,7 +104,7 @@ function findMediaEOF(buffer, fileName = '') {
                 }
                 const marker = view.getUint8(offset + 1);
 
-                if (marker === 0xDA) { // SOS (Start of Scan)
+                if (marker === 0xDA) {
                     for (let i = length - 2; i >= offset; i--) {
                         if (view.getUint8(i) === 0xFF && view.getUint8(i + 1) === 0xD9) {
                             return { eof: i + 2, format: 'JPEG' };
@@ -157,6 +154,7 @@ self.onmessage = function (e) {
             const { eof, format } = findMediaEOF(buffer, fileName);
 
             let hiddenType = 'Dados Genéricos';
+            let payloadExt = 'bin';
             let extraBytes = 0;
 
             if (eof !== -1 && buffer.byteLength > eof) {
@@ -164,14 +162,29 @@ self.onmessage = function (e) {
                 for (const payload of SIGNATURES.PAYLOADS) {
                     if (matchSignature(view, payload.bytes, eof)) {
                         hiddenType = payload.label;
+                        payloadExt = payload.ext;
                         break;
                     }
                 }
             }
 
-            self.postMessage({ action: 'ANALYSIS_COMPLETE', eof, format, extraBytes, hiddenType });
+            self.postMessage({ 
+                action: 'ANALYSIS_COMPLETE', 
+                eof, 
+                format, 
+                extraBytes, 
+                hiddenType, 
+                payloadExt 
+            });
         } catch (err) {
-            self.postMessage({ action: 'ANALYSIS_COMPLETE', eof: -1, format: 'Erro de Leitura', extraBytes: 0, hiddenType: 'Nenhum' });
+            self.postMessage({ 
+                action: 'ANALYSIS_COMPLETE', 
+                eof: -1, 
+                format: 'Erro de Leitura', 
+                extraBytes: 0, 
+                hiddenType: 'Nenhum', 
+                payloadExt: 'bin' 
+            });
         }
     }
 };
