@@ -116,7 +116,7 @@ function handleDetectFile(file) {
         }
     }
 
-    // Leitura e envio para o Worker
+    // Leitura e envio para o Worker usando Transferable Objects
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
@@ -128,12 +128,12 @@ function handleDetectFile(file) {
             hexViewer.textContent = bytesToHexDump(sampleView, 0, Math.min(buffer.byteLength, 256));
         }
 
-        // Dispara o Worker passando a cópia limpa do buffer e nome do arquivo
+        // Dispara o Worker de forma performática via transferência de ownership
         forensicWorker.postMessage({
             action: 'ANALYZE_MEDIA',
-            buffer: buffer.slice(0),
+            buffer: buffer,
             fileName: file.name
-        });
+        }, [buffer]);
     };
     reader.readAsArrayBuffer(file);
 }
@@ -187,19 +187,21 @@ function preventDefaults(e) {
 
 function handleJoinImgFile(file) {
     state.joinImgFile = file;
-    document.getElementById('joinImgName').textContent = `${file.name} (${formatBytes(file.size)})`;
+    const el = document.getElementById('joinImgName');
+    if (el) el.textContent = `${file.name} (${formatBytes(file.size)})`;
     checkJoinReady();
 }
 
 function handleJoinSecretFile(file) {
     state.joinSecretFile = file;
-    document.getElementById('joinSecretName').textContent = `${file.name} (${formatBytes(file.size)})`;
+    const el = document.getElementById('joinSecretName');
+    if (el) el.textContent = `${file.name} (${formatBytes(file.size)})`;
     checkJoinReady();
 }
 
 function checkJoinReady() {
     const btn = document.getElementById('joinBtn');
-    btn.disabled = !(state.joinImgFile && state.joinSecretFile);
+    if (btn) btn.disabled = !(state.joinImgFile && state.joinSecretFile);
 }
 
 // --- EXTRAÇÃO DE PAYLOAD ---
@@ -221,8 +223,10 @@ function handleExtractFile(file) {
 
         if (eofInfo.eof === -1 || buffer.byteLength <= eofInfo.eof) {
             setBanner('extractStatusBanner', 'warning', 'Nenhum Payload Encontrado', 'A mídia selecionada não possui dados concatenados anexados.');
-            document.getElementById('btnDownloadCleanImg').style.display = 'none';
-            document.getElementById('btnDownloadPayload').style.display = 'none';
+            const btnClean = document.getElementById('btnDownloadCleanImg');
+            const btnPayload = document.getElementById('btnDownloadPayload');
+            if (btnClean) btnClean.style.display = 'none';
+            if (btnPayload) btnPayload.style.display = 'none';
             return;
         }
 
@@ -238,8 +242,11 @@ function handleExtractFile(file) {
         state.extractedData.payloadExt = detectedExt;
 
         setBanner('extractStatusBanner', 'suspicious', 'Payload Oculto Extraído!', `Foram isolados ${formatBytes(payloadBuffer.byteLength)} de payload (.${detectedExt}) da mídia original.`);
-        document.getElementById('btnDownloadCleanImg').style.display = 'inline-block';
-        document.getElementById('btnDownloadPayload').style.display = 'inline-block';
+        
+        const btnClean = document.getElementById('btnDownloadCleanImg');
+        const btnPayload = document.getElementById('btnDownloadPayload');
+        if (btnClean) btnClean.style.display = 'inline-block';
+        if (btnPayload) btnPayload.style.display = 'inline-block';
     };
     reader.readAsArrayBuffer(file);
 }
@@ -293,84 +300,112 @@ function detectPayloadExtension(view) {
 }
 
 function setupEventListeners() {
-    document.getElementById('joinBtn').addEventListener('click', () => {
-        if (!state.joinImgFile || !state.joinSecretFile) return;
+    const joinBtn = document.getElementById('joinBtn');
+    if (joinBtn) {
+        joinBtn.addEventListener('click', () => {
+            if (!state.joinImgFile || !state.joinSecretFile) return;
 
-        const readerImg = new FileReader();
-        readerImg.onload = function (e1) {
-            const imgBuffer = e1.target.result;
+            const readerImg = new FileReader();
+            readerImg.onload = function (e1) {
+                const imgBuffer = e1.target.result;
 
-            const readerSecret = new FileReader();
-            readerSecret.onload = function (e2) {
-                const secretBuffer = e2.target.result;
+                const readerSecret = new FileReader();
+                readerSecret.onload = function (e2) {
+                    const secretBuffer = e2.target.result;
 
-                const combined = new Uint8Array(imgBuffer.byteLength + secretBuffer.byteLength);
-                combined.set(new Uint8Array(imgBuffer), 0);
-                combined.set(new Uint8Array(secretBuffer), imgBuffer.byteLength);
+                    const combined = new Uint8Array(imgBuffer.byteLength + secretBuffer.byteLength);
+                    combined.set(new Uint8Array(imgBuffer), 0);
+                    combined.set(new Uint8Array(secretBuffer), imgBuffer.byteLength);
 
-                const blob = new Blob([combined], { type: state.joinImgFile.type || 'application/octet-stream' });
-                downloadBlob(blob, `stego_${state.joinImgFile.name}`);
+                    const blob = new Blob([combined], { type: state.joinImgFile.type || 'application/octet-stream' });
+                    downloadBlob(blob, `stego_${state.joinImgFile.name}`);
 
-                const banner = document.getElementById('joinStatusBanner');
-                if (banner) {
-                    banner.classList.remove('hidden');
-                    banner.style.display = 'block';
-                }
+                    const banner = document.getElementById('joinStatusBanner');
+                    if (banner) {
+                        banner.classList.remove('hidden');
+                        banner.style.display = 'block';
+                    }
+                };
+                readerSecret.readAsArrayBuffer(state.joinSecretFile);
             };
-            readerSecret.readAsArrayBuffer(state.joinSecretFile);
-        };
-        readerImg.readAsArrayBuffer(state.joinImgFile);
-    });
+            readerImg.readAsArrayBuffer(state.joinImgFile);
+        });
+    }
 
-    document.getElementById('btnDownloadCleanImg').addEventListener('click', () => {
-        if (state.extractedData.cleanImgBlob && state.extractFile) {
-            downloadBlob(state.extractedData.cleanImgBlob, `clean_${state.extractFile.name}`);
-        }
-    });
+    const btnClean = document.getElementById('btnDownloadCleanImg');
+    if (btnClean) {
+        btnClean.addEventListener('click', () => {
+            if (state.extractedData.cleanImgBlob && state.extractFile) {
+                downloadBlob(state.extractedData.cleanImgBlob, `clean_${state.extractFile.name}`);
+            }
+        });
+    }
 
-    document.getElementById('btnDownloadPayload').addEventListener('click', () => {
-        if (state.extractedData.payloadBlob) {
-            const ext = state.extractedData.payloadExt || 'bin';
-            downloadBlob(state.extractedData.payloadBlob, `extracted_payload.${ext}`);
-        }
-    });
+    const btnPayload = document.getElementById('btnDownloadPayload');
+    if (btnPayload) {
+        btnPayload.addEventListener('click', () => {
+            if (state.extractedData.payloadBlob) {
+                const ext = state.extractedData.payloadExt || 'bin';
+                downloadBlob(state.extractedData.payloadBlob, `extracted_payload.${ext}`);
+            }
+        });
+    }
 
-    document.getElementById('btnResetDetect').addEventListener('click', () => {
-        state.detectFile = null;
-        document.getElementById('detectFileInput').value = '';
-        const res = document.getElementById('detectResult');
-        if (res) {
-            res.classList.add('hidden');
-            res.style.display = 'none';
-        }
-        revokeActivePreview();
-    });
+    const btnResetDetect = document.getElementById('btnResetDetect');
+    if (btnResetDetect) {
+        btnResetDetect.addEventListener('click', () => {
+            state.detectFile = null;
+            const input = document.getElementById('detectFileInput');
+            if (input) input.value = '';
+            const res = document.getElementById('detectResult');
+            if (res) {
+                res.classList.add('hidden');
+                res.style.display = 'none';
+            }
+            revokeActivePreview();
+        });
+    }
 
-    document.getElementById('btnResetJoin').addEventListener('click', () => {
-        state.joinImgFile = null;
-        state.joinSecretFile = null;
-        document.getElementById('joinImgInput').value = '';
-        document.getElementById('joinSecretInput').value = '';
-        document.getElementById('joinImgName').textContent = 'Nenhum arquivo selecionado';
-        document.getElementById('joinSecretName').textContent = 'ZIP, RAR, PDF, TXT, EXE, etc.';
-        document.getElementById('joinBtn').disabled = true;
-        const banner = document.getElementById('joinStatusBanner');
-        if (banner) {
-            banner.classList.add('hidden');
-            banner.style.display = 'none';
-        }
-    });
+    const btnResetJoin = document.getElementById('btnResetJoin');
+    if (btnResetJoin) {
+        btnResetJoin.addEventListener('click', () => {
+            state.joinImgFile = null;
+            state.joinSecretFile = null;
+            const input1 = document.getElementById('joinImgInput');
+            const input2 = document.getElementById('joinSecretInput');
+            if (input1) input1.value = '';
+            if (input2) input2.value = '';
+            
+            const name1 = document.getElementById('joinImgName');
+            const name2 = document.getElementById('joinSecretName');
+            if (name1) name1.textContent = 'Nenhum arquivo selecionado';
+            if (name2) name2.textContent = 'ZIP, RAR, PDF, TXT, EXE, etc.';
+            
+            const btn = document.getElementById('joinBtn');
+            if (btn) btn.disabled = true;
+            
+            const banner = document.getElementById('joinStatusBanner');
+            if (banner) {
+                banner.classList.add('hidden');
+                banner.style.display = 'none';
+            }
+        });
+    }
 
-    document.getElementById('btnResetExtract').addEventListener('click', () => {
-        state.extractFile = null;
-        state.extractedData = { cleanImgBlob: null, payloadBlob: null, payloadExt: 'bin' };
-        document.getElementById('extractFileInput').value = '';
-        const res = document.getElementById('extractResult');
-        if (res) {
-            res.classList.add('hidden');
-            res.style.display = 'none';
-        }
-    });
+    const btnResetExtract = document.getElementById('btnResetExtract');
+    if (btnResetExtract) {
+        btnResetExtract.addEventListener('click', () => {
+            state.extractFile = null;
+            state.extractedData = { cleanImgBlob: null, payloadBlob: null, payloadExt: 'bin' };
+            const input = document.getElementById('extractFileInput');
+            if (input) input.value = '';
+            const res = document.getElementById('extractResult');
+            if (res) {
+                res.classList.add('hidden');
+                res.style.display = 'none';
+            }
+        });
+    }
 }
 
 function downloadBlob(blob, filename) {
