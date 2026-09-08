@@ -42,30 +42,22 @@ function setupWorkerListeners() {
         if (action === 'ANALYSIS_COMPLETE') {
             const resultSection = document.getElementById('detectResult');
             if (resultSection) {
+                // Garante a exibição do painel
                 resultSection.classList.remove('hidden');
-                resultSection.style.display = 'block';
-            }
+                resultSection.style.setProperty('display', 'block', 'important');
 
-            const formatEl = document.getElementById('detectMetaFormat');
-            if (formatEl) formatEl.textContent = format;
-
-            if (eof === -1) {
-                setBanner('detectStatusBanner', 'warning', 'Estrutura Não Reconhecida', 'Não foi possível determinar o limite exato do container da mídia.');
-                document.getElementById('detectMetaExpected').textContent = '-';
-                document.getElementById('detectMetaExtra').textContent = '0 Bytes';
-                document.getElementById('detectMetaType').textContent = 'N/A';
-                return;
-            }
-
-            document.getElementById('detectMetaExpected').textContent = formatBytes(eof);
-            document.getElementById('detectMetaExtra').textContent = formatBytes(extraBytes);
-
-            if (extraBytes > 0) {
-                document.getElementById('detectMetaType').textContent = `${hiddenType} (.${payloadExt})`;
-                setBanner('detectStatusBanner', 'suspicious', '⚠️ Conteúdo Oculto Identificado!', `Anomalia detectada: ${formatBytes(extraBytes)} de dados após o EOF da mídia.`);
-            } else {
-                document.getElementById('detectMetaType').textContent = 'Nenhum';
-                setBanner('detectStatusBanner', 'clean', '✅ Mídia Segura e Limpa', 'Nenhuma anomalia de concatenação identificada.');
+                // Renderiza o relatório de análise diretamente na tela
+                resultSection.innerHTML = `
+                    <div style="margin-top: 20px; padding: 15px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);">
+                        <h3 style="margin-bottom: 10px; color: ${extraBytes > 0 ? '#ff4d4d' : '#00e676'};">
+                            ${extraBytes > 0 ? '⚠️ Anomalia / Payload Detectado!' : '✅ Mídia Limpa'}
+                        </h3>
+                        <p><strong>Formato Detectado:</strong> ${format}</p>
+                        <p><strong>Tamanho Esperado (EOF):</strong> ${formatBytes(eof)}</p>
+                        <p><strong>Dados Excedentes (Payload):</strong> ${formatBytes(extraBytes)}</p>
+                        <p><strong>Tipo Estimado:</strong> ${hiddenType} (${payloadExt.toUpperCase()})</p>
+                    </div>
+                `;
             }
         }
     };
@@ -76,11 +68,13 @@ function handleDetectFile(file) {
     if (!file) return;
     state.detectFile = file;
     
+    // Atualiza metadados na interface (Nome e Tamanho)
     const fileNameEl = document.getElementById('detectFileName');
     const fileSizeEl = document.getElementById('detectFileSize');
     if (fileNameEl) fileNameEl.textContent = file.name;
     if (fileSizeEl) fileSizeEl.textContent = formatBytes(file.size);
 
+    // Atualiza o preview visual da mídia
     revokeActivePreview();
     state.activePreviewUrl = URL.createObjectURL(file);
 
@@ -108,16 +102,19 @@ function handleDetectFile(file) {
         }
     }
 
+    // Leitura e envio para o Worker
     const reader = new FileReader();
     reader.onload = function (e) {
         const buffer = e.target.result;
         
+        // Renderiza a Amostra Hex se o elemento existir na tela
         const hexViewer = document.getElementById('detectHexViewer');
         if (hexViewer) {
             const sampleView = new DataView(buffer);
             hexViewer.textContent = bytesToHexDump(sampleView, 0, Math.min(buffer.byteLength, 256));
         }
 
+        // Dispara o Worker passando a cópia limpa do buffer e nome do arquivo
         forensicWorker.postMessage({
             action: 'ANALYZE_MEDIA',
             buffer: buffer.slice(0),
@@ -234,22 +231,32 @@ function handleExtractFile(file) {
 }
 
 function detectPayloadExtension(view) {
-    if (view.byteLength < 2) return 'bin';
+    if (!view || view.byteLength < 2) return 'bin';
+
+    // Procura a assinatura mágica ignorando pequenos paddings (0x00 ou 0xFF) de até 16 bytes
+    let startOffset = 0;
+    while (startOffset < Math.min(view.byteLength - 2, 16)) {
+        const b = view.getUint8(startOffset);
+        if (b !== 0x00 && b !== 0xFF) break;
+        startOffset++;
+    }
 
     const SIGNATURES = [
-        { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar' },
-        { bytes: [0x50, 0x4B, 0x03, 0x04], ext: 'zip' },
-        { bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], ext: '7z' },
-        { bytes: [0x25, 0x50, 0x44, 0x46], ext: 'pdf' },
-        { bytes: [0x4D, 0x5A], ext: 'exe' },
-        { bytes: [0x7F, 0x45, 0x4C, 0x46], ext: 'bin' }
+        { bytes: [0x4D, 0x5A], ext: 'exe' },                  // Windows Executable
+        { bytes: [0x50, 0x4B, 0x03, 0x04], ext: 'zip' },      // ZIP / DOCX / XLSX
+        { bytes: [0x52, 0x61, 0x72, 0x21], ext: 'rar' },      // RAR
+        { bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], ext: '7z' }, // 7-Zip
+        { bytes: [0x25, 0x50, 0x44, 0x46], ext: 'pdf' },      // PDF
+        { bytes: [0x7F, 0x45, 0x4C, 0x46], ext: 'elf' },      // ELF Linux
+        { bytes: [0xFF, 0xD8, 0xFF], ext: 'jpg' },            // JPEG
+        { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png' }       // PNG
     ];
 
     for (const sig of SIGNATURES) {
-        if (view.byteLength >= sig.bytes.length) {
+        if (view.byteLength - startOffset >= sig.bytes.length) {
             let match = true;
             for (let i = 0; i < sig.bytes.length; i++) {
-                if (view.getUint8(i) !== sig.bytes[i]) {
+                if (view.getUint8(startOffset + i) !== sig.bytes[i]) {
                     match = false;
                     break;
                 }
@@ -258,17 +265,17 @@ function detectPayloadExtension(view) {
         }
     }
 
-    // Tenta identificar se é texto/log (ASCII)
+    // Checa se o conteúdo é texto plano / log (ASCII legível)
     let isText = true;
-    const checkLength = Math.min(view.byteLength, 128);
-    for (let i = 0; i < checkLength; i++) {
+    const checkLength = Math.min(view.byteLength - startOffset, 256);
+    for (let i = startOffset; i < startOffset + checkLength; i++) {
         const byte = view.getUint8(i);
         if ((byte < 0x09 || byte > 0x0D) && (byte < 0x20 || byte > 0x7E)) {
             isText = false;
             break;
         }
     }
-    if (isText) return 'log';
+    if (isText && checkLength > 0) return 'txt';
 
     return 'bin';
 }
