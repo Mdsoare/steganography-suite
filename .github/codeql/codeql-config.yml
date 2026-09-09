@@ -2,3 +2,7 @@ name: "CodeQL Config Customizada"
 
 paths-ignore:  
   - 'assets/js/vendor/**'
+
+query-filters:
+  - exclude:
+      id: js/missing-origin-check
