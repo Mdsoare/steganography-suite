@@ -245,9 +245,23 @@ function findMediaEOF(bytes, fileName = '') {
 }
 
 self.onmessage = function (e) {
-    const { action, buffer, fileName } = e.data || {};
+    if (!e.data || typeof e.data !== 'object') return;
+    
+    const { action, buffer, fileName } = e.data;
 
-    if (action === 'ANALYZE_MEDIA' && buffer) {
+    if (action === 'ANALYZE_MEDIA') {
+        if (!buffer || !(buffer instanceof ArrayBuffer)) {
+            self.postMessage({ 
+                action: 'ANALYSIS_COMPLETE', 
+                eof: -1, 
+                format: 'Buffer inválido', 
+                extraBytes: 0, 
+                hiddenType: 'Nenhum', 
+                payloadExt: 'bin' 
+            });
+            return;
+        }
+
         try {
             const bytes = new Uint8Array(buffer);
             const { eof, format } = findMediaEOF(bytes, fileName);

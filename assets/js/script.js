@@ -652,10 +652,6 @@ function findMediaEOF(bytes, fileName = '') {
     return { eof: -1, format: ext ? ext.toUpperCase() : 'Desconhecido' };
 }
 
-function findImageEOF(bytes, fileName = '') {
-    return findMediaEOF(bytes, fileName);
-}
-
 function matchSignature(array, target, offset = 0) {
     if (offset + target.length > array.length) return false;
     for (let i = 0; i < target.length; i++) {
