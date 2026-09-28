@@ -20,7 +20,7 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.10.0",
+    "eslint": "^10.11.0",
     "globals": "^17.12.0",
     "htmlhint": "^1.9.2",
     "stylelint": "^17.15.0",
