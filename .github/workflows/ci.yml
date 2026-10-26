@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       - name: Scan para detecção de segredos
-        uses: trufflesecurity/trufflehog@20652fbbdefffcdaa493a5bf57ab2ac6b1db715b
+        uses: trufflesecurity/trufflehog@e63326d6545de8f425d93ce24078c6e68d83f70e
 
   # -------------------------------------------------------------
   # JOB 2: Detecção de Segredos (Gitleaks)
@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Configurar ambiente Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
           cache: "npm"
@@ -107,14 +107,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Inicializar CodeQL
-        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           languages: javascript-typescript
           queries: security-extended,security-and-quality
           config-file: .github/codeql/codeql-config.yml
 
       - name: Executar Análise CodeQL
-        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
 
   # -------------------------------------------------------------
   # JOB 6: SAST Open Source com Horusec
@@ -148,7 +148,7 @@ jobs:
           fi
 
       - name: Upload Horusec SARIF report
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         if: always()
         with:
           sarif_file: horusec-results.sarif
@@ -193,7 +193,7 @@ jobs:
           fi
 
       - name: Upload do Relatório SARIF do Semgrep
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -211,7 +211,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Configurar ambiente Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
           cache: "npm"
@@ -227,7 +227,7 @@ jobs:
   # -------------------------------------------------------------
   sca-osv:
     name: SCA (OSV-Scanner)
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@6e4298ebc4db23e847df9b2e2de2939d6f066c67
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36
     with:
       scan-args: |-
         --lockfile=package-lock.json
@@ -253,7 +253,7 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: Upload do Relatório SARIF do Trivy
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         if: always()
         with:
           sarif_file: "trivy-results.sarif"
@@ -332,7 +332,7 @@ jobs:
           cp -r assets/ dist/
 
       - name: Subir Artefato de Build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: steganography-suite-build
           path: dist/
