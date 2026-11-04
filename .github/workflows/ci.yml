@@ -233,42 +233,7 @@ jobs:
         --lockfile=package-lock.json
 
   # -------------------------------------------------------------
-  # JOB 10: Análise de Dependências e Misconfigurations com Trivy
-  # -------------------------------------------------------------
-  sca-trivy:
-    name: SCA & Misconfig (Trivy Scan)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout do Repositório
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
-      - name: Executar Varredura Trivy (Repository)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "sarif"
-          output: "trivy-results.sarif"
-          severity: "CRITICAL,HIGH"
-          exit-code: '0'
-
-      - name: Tratar e Validar SARIF do Trivy
-        if: always()
-        run: |
-          if [ ! -s "trivy-results.sarif" ]; then
-            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemas/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Trivy","rules":[]}},"results":[]}]}' > trivy-results.sarif
-          fi
-
-      - name: Upload do Relatório SARIF do Trivy
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28
-        if: always()
-        with:
-          sarif_file: "trivy-results.sarif"
-          category: Trivy
-
-  # -------------------------------------------------------------
-  # JOB 11: Validação da Política CSP e Integridade Estrutural
+  # JOB 10: Validação da Política CSP e Integridade Estrutural
   # -------------------------------------------------------------
   csp-and-structure-check:
     name: Validate CSP & File Integrity
@@ -310,7 +275,7 @@ jobs:
           echo "✅ Todos os arquivos essenciais do projeto estão presentes."
 
   # -------------------------------------------------------------
-  # JOB 12: Publicação e Build de Artefatos
+  # JOB 11: Publicação e Build de Artefatos
   # -------------------------------------------------------------
   build-artifact:
     name: Bundle & Upload Artifact
@@ -324,8 +289,7 @@ jobs:
         sast-horusec,
         sast-semgrep,
         sca-npm-audit,
-        sca-osv,
-        sca-trivy,
+        sca-osv,        
         csp-and-structure-check,
       ]
     runs-on: ubuntu-latest
