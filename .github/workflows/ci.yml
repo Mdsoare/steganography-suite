@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       - name: Scan para detecção de segredos
-        uses: trufflesecurity/trufflehog@31ce31ee1abbcc7dc8eee5764c17121c3044c8b2
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc
 
   # -------------------------------------------------------------
   # JOB 2: Detecção de Segredos (Gitleaks)
@@ -107,14 +107,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Inicializar CodeQL
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066
         with:
           languages: javascript-typescript
           queries: security-extended,security-and-quality
           config-file: .github/codeql/codeql-config.yml
 
       - name: Executar Análise CodeQL
-        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066
 
   # -------------------------------------------------------------
   # JOB 6: SAST Open Source com Horusec
@@ -148,7 +148,7 @@ jobs:
           fi
 
       - name: Upload Horusec SARIF report
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066
         if: always()
         with:
           sarif_file: horusec-results.sarif
@@ -193,7 +193,7 @@ jobs:
           fi
 
       - name: Upload do Relatório SARIF do Semgrep
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -227,7 +227,7 @@ jobs:
   # -------------------------------------------------------------
   sca-osv:
     name: SCA (OSV-Scanner)
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@32d3cd482bdadfb38b186c0ad1b031902d55d932
     with:
       scan-args: |-
         --lockfile=package-lock.json
